@@ -28,11 +28,7 @@
 class MyTool
 {
 public:
-    MyTool()
-    {
-        printf("MyTool Ctor\n");
-        printf("MyTool done\n");
-    }
+    MyTool() = default;
     ~MyTool() = default;
 public:
     /*非阻塞fd*/

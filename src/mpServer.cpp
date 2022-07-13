@@ -104,7 +104,7 @@ void mpServer::mpServerListen()
 
     MyTool::snEpollFd = nEpollFd;
     MyTool::spPipeFd = pPipeFd;
-   // httpConn::hc_snEpollFd = nEpollFd;
+    MyHttpConn::hc_snEpollFd = nEpollFd;
 
 }
 
@@ -163,14 +163,15 @@ int mpServer::dealWithUserRead(int nSockfd)
     {
         return -1;
     }
-    //pThreadPool->addTask([this,nSockfd](){this->arrUsers[nSockfd].process();});
+    pThreadPool->addTask([this,nSockfd](){this->arrUsers[nSockfd].process(nSockfd);});
+    return 0;
 }
 
 bool mpServer::dealExitUser(int nSockfd)
 {
     stTool.removefd(nSockfd,nEpollFd);
     close(nSockfd);
-    //--httpConn::nUserFdCount;
+    --MyHttpConn::hc_snUsedCount;
 }
 
 bool mpServer::dealWithNewUser()
@@ -185,7 +186,7 @@ bool mpServer::dealWithNewUser()
         LOG_ERROR("Accept new user failed! errno:%d",errno);
         return false;
     }
-    //if(httpConn::nUserFdCount >= MAX_FD)
+    if(MyHttpConn::hc_snUsedCount >= MAX_FD)
     {
         LOG_WARNING("Too much user!");
         close(nUserFd);
@@ -193,7 +194,7 @@ bool mpServer::dealWithNewUser()
     }
     
     stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,true,true,0);
-    //++httpConn::nUserFdCount;
+    ++MyHttpConn::hc_snUsedCount;
     LOG_INFO("a new client");
     return true;
 
