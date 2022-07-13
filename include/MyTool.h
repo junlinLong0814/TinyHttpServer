@@ -28,6 +28,13 @@
 class MyTool
 {
 public:
+    MyTool()
+    {
+        printf("MyTool Ctor\n");
+        printf("MyTool done\n");
+    }
+    ~MyTool() = default;
+public:
     /*非阻塞fd*/
     int setNonBlock(int nFd);
     /*在epoll上注册监听事件*/

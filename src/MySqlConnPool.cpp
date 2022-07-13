@@ -8,7 +8,7 @@ MySqlConnPool* MySqlConnPool::getSqlConnPoolInstance()
 
 MySqlConnPool::MySqlConnPool():maxConn_(0),currConn_(0)
 {
-
+	
 }
 
 void MySqlConnPool::sqlConnPoolInit(std::string url,std::string user,std::string pwd,std::string dbName,int port,int maxConn,int close_log)

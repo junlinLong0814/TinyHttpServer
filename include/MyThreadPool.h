@@ -16,7 +16,10 @@
 class MyThreadPool
 {
 public:
-    MyThreadPool() = default; 
+    MyThreadPool()
+    {
+        printf("tp ctor");
+    } 
     
     ~MyThreadPool()
     {

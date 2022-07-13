@@ -22,8 +22,8 @@
 #include "MyTool.h"
 #include "MySemaphore.h"
 
-#define RECVBUF_SIZE 4096
-#define SENDBUF_SIZE 4096
+#define RECVBUF_SIZE 1024
+#define SENDBUF_SIZE 1024
 
 
 /*HTTP请求方法*/
@@ -82,7 +82,6 @@ enum HTTP_CODE
 };
 
 
-
 class MyHttpConn
 {
 public:
@@ -92,9 +91,9 @@ public:
 public:
     void process();
     void write();
+    void httpConnInit();
 
 private:
-    void httpConnInit();
     /*ET模式读*/
     bool read();
     /*处理写*/

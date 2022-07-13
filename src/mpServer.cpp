@@ -54,6 +54,14 @@ void mpServer::mpsqlPoolInit()
     LOG_INFO("Dbs<%s>:[usr:%s,pwd:%s,count:%d]",strDBName.c_str(),strUserName.c_str(),strPwd.c_str(),nSqlConnNum);
 }
 
+void mpServer::mphttpConnInit()
+{
+    for(int i = 0 ; i < MAX_FD ; ++i)
+    {
+        arrUsers[i].httpConnInit();
+    }
+}
+
 void mpServer::mpServerListen()
 {
     nListenfd = socket(PF_INET,SOCK_STREAM,0);
@@ -90,9 +98,9 @@ void mpServer::mpServerListen()
     stTool.addfd2Epoll(nListenfd,nEpollFd,EPOLLIN,false,false);
 
     stTool.addSig(SIGPIPE,SIG_IGN);
-    stTool.addSig(SIGTERM,stTool.handler,false);
+    //stTool.addSig(SIGTERM,stTool.handler,false);
     //stTool.addSig(SIGKILL,stTool.handler,false);
-    stTool.addSig(SIGINT,stTool.handler,false);
+    //stTool.addSig(SIGINT,stTool.handler,false);
 
     MyTool::snEpollFd = nEpollFd;
     MyTool::spPipeFd = pPipeFd;
@@ -155,7 +163,7 @@ int mpServer::dealWithUserRead(int nSockfd)
     {
         return -1;
     }
-    pThreadPool->addTask([this,nSockfd](){this->arrUsers[nSockfd].process();});
+    //pThreadPool->addTask([this,nSockfd](){this->arrUsers[nSockfd].process();});
 }
 
 bool mpServer::dealExitUser(int nSockfd)

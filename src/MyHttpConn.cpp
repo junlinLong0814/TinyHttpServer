@@ -7,7 +7,7 @@ MyHttpConn::MyHttpConn(int nFd):nSockfd(nFd)
 {
     // std::unique_ptr<MyTool> upTmpTool(new MyTool());
     // upTool = std::move(upTmpTool);
-    httpConnInit();
+    //httpConnInit();
 }
 MyHttpConn::~MyHttpConn()
 {

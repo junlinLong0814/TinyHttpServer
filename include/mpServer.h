@@ -25,7 +25,7 @@
 #include "MyThreadPool.h"
 #include "MyHttpConn.h"
 
-#define MAX_FD 10
+#define MAX_FD 65536
 #define MAX_EVENT_NUMBER 10000 
 
 class mpServer
@@ -52,6 +52,8 @@ public:
     void mpsqlPoolInit();
     /*线程池初始化*/
     void mpthreadPoolInit();
+    /*httpconn初始化*/
+    void mphttpConnInit();
     /*处理新到来的用户*/
     bool dealWithNewUser();
     /*处理离开的用户*/

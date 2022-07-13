@@ -4,17 +4,19 @@ int main(int argc, char *argv[])
 {
     mpServer mpServer;
 
-    //mpServer.mplogInit();
+    mpServer.mplogInit();
 
-    //mpServer.mpServerInit();
+    mpServer.mpServerInit();
 
-    // mpServer.mpsqlPoolInit();
+    mpServer.mpsqlPoolInit();
 
-    // mpServer.mpthreadPoolInit();
+    mpServer.mpthreadPoolInit();
 
-    // mpServer.mpServerListen();
+    mpServer.mphttpConnInit();
 
-    // mpServer.mpServerRun();
+    mpServer.mpServerListen();
+
+    mpServer.mpServerRun();
 
     return 0;
 }
