@@ -1,0 +1,1 @@
+/usr/bin/c++    -rdynamic CMakeFiles/tomdog.dir/Log.cpp.o CMakeFiles/tomdog.dir/main.cpp.o CMakeFiles/tomdog.dir/mpServer.cpp.o CMakeFiles/tomdog.dir/mySemaphore.cpp.o CMakeFiles/tomdog.dir/sqlConnpool.cpp.o  -o ../bin/tomdog -lmysqlclient -lpthread -lz -lm -lrt -latomic -lssl -lcrypto -ldl -lpthread 
