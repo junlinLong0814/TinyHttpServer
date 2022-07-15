@@ -22,8 +22,8 @@
 #include "MyTool.h"
 #include "MySemaphore.h"
 
-#define RECVBUF_SIZE 1024
-#define SENDBUF_SIZE 1024
+#define RECVBUF_SIZE 2048
+#define SENDBUF_SIZE 2048
 
 
 /*HTTP请求方法*/
@@ -89,15 +89,18 @@ public:
     ~MyHttpConn() ;
 
 public:
-    void process();
-    void write();
+    /*供线程池使用的工作函数*/
+    void process(int nfd);
+    void write(int nfd);
+    void write(int nfd,bool& bflag);
+
+    /*供服务器使用的初始化函数*/
     void httpConnInit();
 
 private:
+    /*------接收-------*/
     /*ET模式读*/
     bool read();
-    /*处理写*/
-    bool processWrite();
     /*处理读*/
     HTTP_CODE processRead();
     /*解析行内容*/
@@ -108,9 +111,34 @@ private:
     HTTP_CODE parseRequestHeader();
     /*解析content*/
     HTTP_CODE parseContent();
+    /*对请求的文件做处理*/
+    int doRequest();
+
+    /*-------发送----------*/
+    /*处理写*/
+    bool processWrite(HTTP_CODE enRet);
+    /*响应行*/
+    bool addStatusLine(int nStatus,const char* cpTitle);
+    /*响应头*/
+    bool addResponseHeader(int nWait2SendSize);
+    /*正文长度*/
+    bool addContentLength(int nWait2SendSize);
+    /*正文类型*/
+    bool addContentType(const char* cpContentStyle);
+    /*keep-alive*/
+    bool addLinger();
+    /*/r/n*/
+    bool addBlankLine();
+    /*content*/
+    bool addContent(const char* cpContent);
+    /*多参数格式填入*/
+    bool addInFormat(const char *format,...);
+    
+
 
     /*关闭连接*/
     bool closeConn();
+    void unmap();
 
 public:
     static int hc_snEpollFd;
@@ -119,7 +147,9 @@ private:
     char carrRecvBuf[RECVBUF_SIZE];
     char carrSendBuf[SENDBUF_SIZE];
 
-    //std::unique_ptr<MyTool> upTool;
+    struct stat stFileStat;
+    struct iovec stIc[2];
+    int nIcCount;
 
     int nSockfd;                        //socket
     MySqlConnPool* pSqlPool;            //mysql连接池
@@ -135,6 +165,10 @@ private:
     char* cpUrl;
     char* cpVersion;
     char* cpHost;
+
+    int nLastPosInSend;             //指向发送缓冲区最后的位置
+    int nBytes2Send;                //待发送的字节数
+    int nBytesHadSend;              //已发送的字节数
 
     char* cpFileAddress;
 

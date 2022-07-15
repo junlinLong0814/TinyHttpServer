@@ -62,6 +62,8 @@ public:
     int dealWithSignal(bool& bStop);
     /*处理待读的fd*/
     int dealWithUserRead(int nSockfd);
+    /*处理待写的fd*/
+    int dealWithUserWrite(int nSockfd);
 public:
     mpServer();
     ~mpServer();

@@ -149,7 +149,16 @@ void mpServer::mpServerRun()
                 /*用户可读事件*/
                 if(0!=dealWithUserRead(nSockfd))
                 {
-                    LOG_WARNING("Deal fd[%d] error!",nSockfd);
+                    LOG_WARNING("Read from fd[%d] error!",nSockfd);
+                    continue;
+                }
+            }
+            else if(stEvents[i].events & (EPOLLOUT))
+            {
+                /*用户可写事件*/
+                if(0!=dealWithUserWrite(nSockfd))
+                {
+                    LOG_WARNING("Write in fd[%d] error!",nSockfd);
                     continue;
                 }
             }
@@ -157,13 +166,33 @@ void mpServer::mpServerRun()
         }
     }
 }
+
+int mpServer::dealWithUserWrite(int nSockfd)
+{
+    if(nSockfd < 0 || nSockfd >= MAX_FD)
+    {
+        return -1;
+    }
+    pThreadPool->addTask(
+            [this,nSockfd]()
+            {
+                bool flag = false;
+                this->arrUsers[nSockfd].write(nSockfd,flag);
+            });
+    return 0;
+}
+
 int mpServer::dealWithUserRead(int nSockfd)
 {
     if(nSockfd < 0 || nSockfd >= MAX_FD)
     {
         return -1;
     }
-    pThreadPool->addTask([this,nSockfd](){this->arrUsers[nSockfd].process(nSockfd);});
+    pThreadPool->addTask(
+        [this,nSockfd]()
+        {
+            this->arrUsers[nSockfd].process(nSockfd);
+        });
     return 0;
 }
 
@@ -239,8 +268,6 @@ int mpServer::dealWithSignal(bool& bStopServer)
     }
     return 0;
 }
-
-
 
 
 mpServer::~mpServer()
