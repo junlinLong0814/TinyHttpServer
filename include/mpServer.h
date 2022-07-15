@@ -42,7 +42,8 @@ public:
                       int nSqlConnNum,
                       std::string strUrl,
                       std::string strDBName,
-                      int nSqlPort);
+                      int nSqlPort,
+                      bool bLog);
     void mpServerInit();
     /*开始监听*/
     void mpServerListen();
@@ -98,6 +99,7 @@ private:
 
     /*日志*/
     MyLog *pLog;
+    bool bLogOn;
 
     /*工具类*/
     MyTool stTool;

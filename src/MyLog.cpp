@@ -41,7 +41,7 @@ void MyLog::appendBuf()
 	ctmpLogFileBuf[0]='\0';
 }
 
-bool MyLog::logInit(int maxBlockSize)
+bool MyLog::logInit(bool bLog)
 {
 
 	memset(cdirName_, '\0', sizeof(cdirName_));
@@ -67,6 +67,8 @@ bool MyLog::logInit(int maxBlockSize)
 	nyear_ = nyear;
 	nmonth_ = nmonth;
 	ntoday_ = nday;
+
+	bLogOn = bLog;
 	return true;
 
 }

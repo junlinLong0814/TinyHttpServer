@@ -24,7 +24,7 @@ public:
 	}
 
 	/*日志初始化*/
-	bool logInit(int maxBlockSize = 1);
+	bool logInit(bool bLog);
 
 	bool newWriteLog(std::string strInfoType,
 					const char* pcFileName,
@@ -39,6 +39,9 @@ private:
 
 	MyLog();
 	~MyLog();
+	
+public:
+	bool											bLogOn;
 
 private:
 	char 											ctmpLogFileBuf[LOG_BUF_SIZE];	//待写入日志文件的缓冲区
@@ -56,6 +59,7 @@ private:
 	int 											nbufLastIdx;					//指向缓冲区结尾位置
 	FILE 											*fplogFile_;					//指向日志文件指针
 	
+								//true开启日志
 	//std::string 									slog;				
 	//std::string 									slog2;
 	//bool 										bcanWriteFile;								//指示线程是否可以进行文件的写
@@ -64,10 +68,10 @@ private:
 };
 
 
-#define LOG_DEBUG(...) {MyLog::getLogInstance()->newWriteLog("[DEBUG]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
-#define LOG_INFO(...) {MyLog::getLogInstance()->newWriteLog("[INFO]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
-#define LOG_WARNING(...) {MyLog::getLogInstance()->newWriteLog("[WARNING]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
-#define LOG_ERROR(...) {MyLog::getLogInstance()->newWriteLog("[ERROR]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
+#define LOG_DEBUG(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[DEBUG]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
+#define LOG_INFO(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[INFO]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
+#define LOG_WARNING(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[WARNING]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
+#define LOG_ERROR(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[ERROR]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
 
 // #define LOG_DEBUG(...) {MyLog::GetLogInstance()->newWriteLog("[Debug]:", ##__VA_ARGS__);}
 // #define LOG_INFO(...) {MyLog::GetLogInstance()->newWriteLog("[Info]:", ##__VA_ARGS__);}

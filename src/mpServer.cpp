@@ -1,9 +1,19 @@
 #include "mpServer.h"
 
-mpServer::mpServer() : unPort(8888),nThreadNum(4),nMaxTasks(10000),strUserName("ljl"),strPwd("123456"),nSqlConnNum(10),strUrl("localhost"),strDBName("test"),nSqlPort(15)
+mpServer::mpServer()
 {
     memset(pPipeFd,'\0',sizeof(pPipeFd));
     memset(arrUsers,'\0',sizeof(arrUsers));
+    unPort = 8888;
+    nThreadNum = 4;
+    nMaxTasks = 10000;
+    strUserName = "ljl";
+    strPwd = "123456";
+    nSqlConnNum = 10;
+    strUrl = "localhost";
+    strDBName = "test" ;
+    nSqlPort = 15;
+    bLogOn = true;
 }
 
 void mpServer::mpServerInit()
@@ -12,31 +22,33 @@ void mpServer::mpServerInit()
 }
 
 void mpServer::mpServerInit(int nPort,
-                            int nThreadNum,
-                            int nMaxTasks,
-                            std::string strUserName,
-                            std::string strPwd,
-                            int nSqlConnNum,
-                            std::string strUrl,
-                            std::string strDBName,
-                            int nSqlPort)
+                            int nThread,
+                            int nTasks,
+                            std::string strUser,
+                            std::string strPd,
+                            int nSqlConn,
+                            std::string strlUrl,
+                            std::string strlDBName,
+                            int nlSqlPort,
+                            bool bLog)
 {
     unPort = nPort < 0 ? 8888 : nPort;
-    nThreadNum = nThreadNum < 0 ? 4 : nThreadNum;
-    nMaxTasks = nMaxTasks < 0 ? 10000 : nMaxTasks;
-    strUserName = strUserName;
-    strPwd = strPwd;
-    nSqlConnNum = nSqlConnNum;
-    strUrl = strUrl;
-    strDBName = strDBName;
-    nSqlPort = nSqlPort < 0 ? 15 : nSqlPort;
+    nThreadNum = nThread < 0 ? 4 : nThread;
+    nMaxTasks = nTasks < 0 ? 10000 : nTasks;
+    strUserName = strUser;
+    strPwd = strPd;
+    nSqlConnNum = nSqlConn;
+    strUrl = strlUrl;
+    strDBName = strlDBName;
+    nSqlPort = nlSqlPort < 0 ? 15 : nlSqlPort;
+    bLogOn = bLog;
     //printf("Server Init Succeed\n");
 }
 
 void mpServer::mplogInit()
 {
     pLog = MyLog::getLogInstance();
-    pLog->logInit();
+    pLog->logInit(bLogOn);
 }
 
 void mpServer::mpthreadPoolInit()
@@ -167,39 +179,39 @@ void mpServer::mpServerRun()
     }
 }
 
-int mpServer::dealWithUserWrite(int nSockfd)
+int mpServer::dealWithUserWrite(int nfd)
 {
-    if(nSockfd < 0 || nSockfd >= MAX_FD)
+    if(nfd < 0 || nfd >= MAX_FD)
     {
         return -1;
     }
     pThreadPool->addTask(
-            [this,nSockfd]()
+            [this,nfd]()
             {
                 bool flag = false;
-                this->arrUsers[nSockfd].write(nSockfd,flag);
+                this->arrUsers[nfd].write(nfd,flag);
             });
     return 0;
 }
 
-int mpServer::dealWithUserRead(int nSockfd)
+int mpServer::dealWithUserRead(int nfd)
 {
-    if(nSockfd < 0 || nSockfd >= MAX_FD)
+    if(nfd < 0 || nfd >= MAX_FD)
     {
         return -1;
     }
     pThreadPool->addTask(
-        [this,nSockfd]()
+        [this,nfd]()
         {
-            this->arrUsers[nSockfd].process(nSockfd);
+            this->arrUsers[nfd].process(nfd);
         });
     return 0;
 }
 
-bool mpServer::dealExitUser(int nSockfd)
+bool mpServer::dealExitUser(int nfd)
 {
-    stTool.removefd(nSockfd,nEpollFd);
-    close(nSockfd);
+    stTool.removefd(nfd,nEpollFd);
+    close(nfd);
     --MyHttpConn::hc_snUsedCount;
 }
 
