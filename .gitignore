@@ -1,3 +1,7 @@
 build/
 bin/
 *.o
+src/!.cpp
+include/!.h
+include/!.hpp
+

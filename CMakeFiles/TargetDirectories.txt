@@ -1,5 +1,0 @@
-/home/ljl/mpServer/CMakeFiles/rebuild_cache.dir
-/home/ljl/mpServer/CMakeFiles/edit_cache.dir
-/home/ljl/mpServer/src/CMakeFiles/rebuild_cache.dir
-/home/ljl/mpServer/src/CMakeFiles/edit_cache.dir
-/home/ljl/mpServer/src/CMakeFiles/tomdog.dir
