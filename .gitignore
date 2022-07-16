@@ -4,4 +4,7 @@ bin/
 src/!.cpp
 include/!.h
 include/!.hpp
+*.cmake
+*.make
+*.txt
 
