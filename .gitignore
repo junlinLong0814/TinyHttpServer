@@ -2,9 +2,14 @@ build/
 bin/
 *.o
 src/!.cpp
+src/
 include/!.h
 include/!.hpp
+include
 *.cmake
 *.make
 *.txt
-
+*.marks
+*.log
+CMakeFiles/
+./Makefile
