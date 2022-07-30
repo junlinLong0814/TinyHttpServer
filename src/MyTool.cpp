@@ -36,7 +36,8 @@ void MyTool::handler(int nSignal)
 {
     int nSavedErrno = errno;
     int nMsg = nSignal;
-    send(spPipeFd[1],(char*)&nMsg,1,0);
+    write(spPipeFd[1],(const void*)&nMsg,1);
+    //send(spPipeFd[1],(char*)&nMsg,1,0);
     errno = nSavedErrno;
 }
 
@@ -57,7 +58,11 @@ int MyTool::setFdLinger(int nFd,int nLingerTime)
 int MyTool::removefd(int nFd,int nEpollFd)
 {
     epoll_ctl(nEpollFd,EPOLL_CTL_DEL,nFd,0);
-    close(nFd);
+    if(nFd != -1)
+    {
+        close(nFd);
+    }
+    
 }
 
 void MyTool::addfd2Epoll(int nFd,int nEpollFd,int nOpt,bool bOneShot,bool bEt,bool bUseLinger,int nLingerTime)

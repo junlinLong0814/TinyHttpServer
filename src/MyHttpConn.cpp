@@ -14,6 +14,7 @@ const char* cp500Response = "Please try again later";
 
 int htRemovefd(int nFd,int nEpollFd)
 {
+    LOG_DEBUG("[%d] User closed!",nFd);
     epoll_ctl(nEpollFd,EPOLL_CTL_DEL,nFd,0);
     close(nFd);
 }
@@ -600,6 +601,7 @@ void MyHttpConn::write(int nfd,bool& bflag)
 
         if(nBytes2Send <= 0)
         {
+            LOG_DEBUG("Send 2 [%d] done,keep-alive:%d",nfd,bLinger);
             unmap();
             htModfd(nfd,hc_snEpollFd,EPOLLIN,true);
             if(bLinger)

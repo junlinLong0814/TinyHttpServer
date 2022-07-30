@@ -2,6 +2,8 @@
 
 MySqlConnPool* MySqlConnPool::getSqlConnPoolInstance()
 {
+	/*std=C++11:
+		如果控制在初始化变量时同时进入声明,则并发执行应等待初始化完成.*/
 	static MySqlConnPool connPool;
 	return &connPool;
 }

@@ -18,7 +18,6 @@ class MyThreadPool
 public:
     MyThreadPool()
     {
-        printf("tp ctor");
     } 
     
     ~MyThreadPool()
@@ -59,24 +58,25 @@ private:
         for(; ;)
         {
             std::function<void()> fTask = nullptr;
-            if(!bStop)
+
             {
                 std::unique_lock<std::mutex> lock(mxTasksList);
                 /*任务队列有待处理的任务 || 结束线程池*/
                 cdNewTask.wait(lock,
                     [this](){ return bStop || !lTasksList.empty();});
-            }
+                
+
+                if(bStop && lTasksList.empty()) return ;
+
+                if(!lTasksList.empty())
+                {
+                    fTask = lTasksList.front();
+                    lTasksList.pop_front();
+                }
             
-
-            if(bStop && lTasksList.empty()) return ;
-
-            if(!lTasksList.empty())
-            {
-                fTask = lTasksList.front();
-                lTasksList.pop_front();
+                if(fTask == nullptr) continue;
             }
-        
-            if(fTask == nullptr) continue; 
+             
 
             fTask();  
         }
@@ -91,10 +91,6 @@ private:
     bool bStop;
     
 };
-
-
-
-
 
 
 template<class F,class... Args>

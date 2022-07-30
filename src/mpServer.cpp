@@ -137,7 +137,7 @@ void mpServer::mpServerRun()
         for(int i = 0 ; i < nActiveFd; ++i)
         {
             int nSockfd = stEvents[i].data.fd;
-            LOG_INFO("client<%d>,events:%d",nSockfd,stEvents[i].events);
+            LOG_DEBUG("client<%d>,events:%d",nSockfd,stEvents[i].events);
             if(nSockfd == nListenfd)
             {
                 /*新接收的客户*/
@@ -153,6 +153,7 @@ void mpServer::mpServerRun()
             }   
             else if(stEvents[i].events & (EPOLLRDHUP | EPOLLHUP | EPOLLERR) )
             {
+                LOG_DEBUG("Get [%d] user exit signal!",nSockfd);
                 /*关闭该fd*/
                 dealExitUser(nSockfd);
             }
@@ -234,9 +235,9 @@ bool mpServer::dealWithNewUser()
         return false;
     }
     
-    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,true,true,0);
+    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,true,false,0);
     ++MyHttpConn::hc_snUsedCount;
-    LOG_INFO("a new client");
+    LOG_DEBUG("a new client[%d]",nUserFd);
     return true;
 
 }
@@ -265,13 +266,11 @@ int mpServer::dealWithSignal(bool& bStopServer)
                 case SIGTERM : 
                 {
                     bStopServer = true;
-                    printf("SIGTERM\n");
                     break;
                 }
                 case SIGKILL:
                 {
                     bStopServer = true;
-                    printf("SIGKILL\n");
                     break;
                 }
                 break;
