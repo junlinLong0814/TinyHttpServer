@@ -45,7 +45,7 @@ public:
         nMaxTasks = nMaxTasks;
         for(int i = 0 ; i < nThreadNum ; ++i)
         {
-            std::shared_ptr<std::thread> spThread= std::make_shared<std::thread>(&MyThreadPool::threadWorkFunc,this);
+            std::shared_ptr<std::thread> spThread= std::make_shared<std::thread>(&MyThreadPool::threadWorkFunc,this,i);
             arrThreads.push_back(spThread);
         }
     }
@@ -53,7 +53,7 @@ public:
     template<class F,class ...Args>
     bool addTask(F&& f,Args&&... args);
 private:
-    void threadWorkFunc()
+    void threadWorkFunc(int id)
     {
         for(; ;)
         {
@@ -73,11 +73,11 @@ private:
                     fTask = lTasksList.front();
                     lTasksList.pop_front();
                 }
-            
+
                 if(fTask == nullptr) continue;
             }
              
-
+            //printf("[%d] thread task\n",id);
             fTask();  
         }
     }

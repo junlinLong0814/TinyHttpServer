@@ -1,5 +1,8 @@
 #include "MyHttpConn.h"
 
+#define FULL_HTML_ROOT "/home/ljl/mpServer/htmlfolder"
+#define FULL_OTH_FILE_ROOT "/home/ljl/mpServer/sourcefolder"
+
 
 int MyHttpConn::hc_snEpollFd = 0;
 int MyHttpConn::hc_snUsedCount = 0;
@@ -54,12 +57,13 @@ void MyHttpConn::httpConnInit()
 {
     memset(carrRecvBuf,'\0',sizeof(carrRecvBuf));
     memset(carrSendBuf,'\0',sizeof(carrSendBuf));
+    memset(carrUploadFileContent,'\0',sizeof(carrUploadFileContent));
     memset(&stFileStat,'\0',sizeof(stFileStat));
     memset(&stIc,'\0',sizeof(stIc));
     pSqlPool = MySqlConnPool::getSqlConnPoolInstance();
-    bLinger = false;
+    bLinger = false,bUpload = false;
     nRowStart = 0 ,nRowEnd = 0 , nLastPosInRecv = 0 , nContent = 0 ;
-    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0;
+    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0;
     enCheckState = CHECK_STATE_REQUESTLINE;
     enMethod = GET;
     if(cpFileAddress != nullptr)
@@ -67,6 +71,7 @@ void MyHttpConn::httpConnInit()
         unmap();
     }
     cpUrl = nullptr, cpVersion = nullptr, cpHost = nullptr,cpFileAddress = nullptr;
+    cpBoundary = nullptr,cpUploadFileName = nullptr , cpFileContent = nullptr;
 }
 
 
@@ -226,6 +231,55 @@ HTTP_CODE MyHttpConn::parseContent()
     /*Post*/
     if(enMethod == POST)
     {
+        printf("Post : %s\n",cpUrl);
+        if(strstr(cpUrl,"upload"))
+        {
+            /*客户端上传文件*/
+            char *mytmp=strstr(cpTmpContent,"filename=");
+            LOG_DEBUG("mytmp==nullptr[%d],this is test:%s\n",(mytmp==nullptr),cpTmpContent);
+            if(mytmp!=nullptr)
+            {
+                /*抓取boundary、filename、filecontent三方面*/
+                //1.抓取边界符
+                char *pTmp= strstr(cpTmpContent,"\r\n");
+                if(pTmp != nullptr)
+                {
+                    *pTmp = '\0';
+                    ++pTmp;
+                    *pTmp = '\0';
+                    ++pTmp;
+                    cpBoundary = cpTmpContent;
+                }
+                printf("pTmp!=nullptr[%d]\n",(pTmp!=nullptr));
+                
+                //2.抓取文件名字
+                pTmp = strstr(pTmp,"ename=\"");
+                if(pTmp != nullptr)
+                {
+                    cpUploadFileName = pTmp + 7;
+                    pTmp = strstr(cpUploadFileName,"\"");
+                    *pTmp = '\0';
+                    ++pTmp;
+                }
+                printf("pTmp!=nullptr[%d]\n",(pTmp!=nullptr));
+
+                //3.抓取文件内容
+                pTmp = strstr(pTmp,"\r\n\r\n");
+                if(pTmp != nullptr)
+                {
+                    pTmp += 4;
+                    //先拉一根指针指向文件内容存储的地址 后续再写入
+                    cpFileContent = pTmp;
+                    pTmp = strstr(pTmp,cpBoundary);
+                    *pTmp = '\0';
+                }
+                printf("pTmp!=nullptr[%d]\n",(pTmp!=nullptr));
+                LOG_DEBUG("\nBoundary[%s]\nContent[%s]\nname[%s]\n",cpBoundary,cpFileContent,cpUploadFileName);
+
+            }
+            
+            return UPLOAD_REQUEST;
+        }
         /*注册*/
         MYSQL* pTmpSqlConn = nullptr;
         sqlConnRAII(&pTmpSqlConn,pSqlPool);
@@ -314,26 +368,35 @@ HTTP_CODE MyHttpConn::parseContent()
         if(cpUrl==nullptr || strlen(cpUrl) <= 0) cpUrl = "/login.html";
     }
 
-    if(cpUrl == nullptr || strstr(cpUrl,".html") == nullptr)
+    if(cpUrl == nullptr 
+       // || strstr(cpUrl,".html") == nullptr
+        )
     {
         cpUrl = "/login.html";
     }
     
     std::string strUrl(cpUrl);
-    std::string strFullAddress = "/home/ljl/mpServer/htmlfolder";
+    std::string strFullAddress = FULL_HTML_ROOT;
+    if(strstr(cpUrl,"html") == nullptr)
+    {
+        strFullAddress = FULL_OTH_FILE_ROOT;
+    }
     strFullAddress +=  strUrl;
     char* cpFullAddress = const_cast<char*>(strFullAddress.c_str());
     if(stat(cpFullAddress,&stFileStat) < 0)
     {
+        LOG_ERROR("stat error, errno:%d",errno);
         return NO_RESOURCE;
     }
     if(!(stFileStat.st_mode & S_IROTH))
     {
+        LOG_ERROR("S_IROTH error, errno:%d",errno);
         return FORBIDDEN_REQUEST;
     }
     int nFilefd = open(cpFullAddress,O_RDONLY);
     if(nFilefd <= 0 )
     {
+        LOG_ERROR("nFilefd error, errno:%d",errno);
         return NO_RESOURCE;
     }
     cpFileAddress = (char *)mmap(0,stFileStat.st_size,PROT_READ,MAP_PRIVATE,nFilefd,0);
@@ -564,12 +627,13 @@ void MyHttpConn::write(int nfd,bool& bflag)
         return ;
     }
 
+    LOG_INFO("DeBug:write to [%d],nBytes2Send[%d],url[%s]",nSockfd,nBytes2Send,cpUrl);
+
     int nRet = 0;
     for( ; ; )
     {
         nRet = writev(nfd,stIc,nIcCount);
-
-        if(nRet == 0)
+        if(nRet <= 0)
         {
             if(errno == EAGAIN)
             {
@@ -583,6 +647,7 @@ void MyHttpConn::write(int nfd,bool& bflag)
             bflag = false;
             return ;
         }
+        nTotal += nRet;
 
         nBytesHadSend += nRet;
         nBytes2Send -= nRet;
@@ -601,7 +666,7 @@ void MyHttpConn::write(int nfd,bool& bflag)
 
         if(nBytes2Send <= 0)
         {
-            LOG_DEBUG("Send 2 [%d] done,keep-alive:%d",nfd,bLinger);
+            LOG_DEBUG("Send 2 [%d] done,total[%d],keep-alive:%d",nfd,nTotal,bLinger);
             unmap();
             htModfd(nfd,hc_snEpollFd,EPOLLIN,true);
             if(bLinger)

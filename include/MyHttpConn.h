@@ -78,6 +78,7 @@ enum HTTP_CODE
     FILE_REQUEST,
     INTERNAL_ERRNO,
     CLOSED_CONNECTION,
+    UPLOAD_REQUEST,
     NO_REQUEST
 };
 
@@ -155,6 +156,7 @@ private:
     MySqlConnPool* pSqlPool;            //mysql连接池
 
     bool bLinger;                   //是否keep-live
+    int nTotal;                     //每次请求发送的总字节
     int nContent;
     int nRowStart;					//http报文每行行首
 	int nRowEnd;					//指向解析最新数据的最后一个行尾
@@ -169,6 +171,12 @@ private:
     int nLastPosInSend;             //指向发送缓冲区最后的位置
     int nBytes2Send;                //待发送的字节数
     int nBytesHadSend;              //已发送的字节数
+
+    bool  bUpload;              
+    char  *cpUploadFileName;         //客户端上传文件名字
+    char  carrUploadFileContent[RECVBUF_SIZE];  //上传文件内容
+    char  *cpFileContent;
+    char  *cpBoundary;              //边界符
 
     char* cpFileAddress;
 
