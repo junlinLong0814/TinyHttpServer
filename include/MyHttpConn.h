@@ -24,6 +24,8 @@
 
 #define RECVBUF_SIZE 2048
 #define SENDBUF_SIZE 2048
+#define FILENAME_SIZE 100
+#define FILE_MODE (S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH) 
 
 
 /*HTTP请求方法*/
@@ -48,7 +50,8 @@ enum CHECK_STATE
 {
     CHECK_STATE_REQUESTLINE=0,
     CHECK_STATE_REQUESTHEADER,
-    CHECK_STATE_CONTENT
+    CHECK_STATE_CONTENT,
+    CHECK_STATE_UPLOAD
 };
 
 /*从状态机的三种状态
@@ -114,6 +117,13 @@ private:
     HTTP_CODE parseContent();
     /*对请求的文件做处理*/
     int doRequest();
+    /*接收上传文件*/
+    HTTP_CODE processUpload();
+    bool judge_boundary();
+    bool judge_filename(); 
+    bool judge_uploadType();
+    void initForUpload();
+    HTTP_CODE write_fileContent(bool& bGotFileEof);
 
     /*-------发送----------*/
     /*处理写*/
@@ -152,31 +162,36 @@ private:
     struct iovec stIc[2];
     int nIcCount;
 
-    int nSockfd;                        //socket
-    MySqlConnPool* pSqlPool;            //mysql连接池
+    int nSockfd;                                            //socket
+    MySqlConnPool* pSqlPool;                                //mysql连接池
 
-    bool bLinger;                   //是否keep-live
-    int nTotal;                     //每次请求发送的总字节
-    int nContent;
-    int nRowStart;					//http报文每行行首
-	int nRowEnd;					//指向解析最新数据的最后一个行尾
-    int nLastPosInRecv;             //指向读取接收缓冲区的最后一个位置
-    CHECK_STATE enCheckState;		    //主状态机状态	
+    bool bLinger;                                           //是否keep-live
+    int nContent;                                           //请求主体长度
+    int nRowStart;					                        //http报文每行行首
+	int nRowEnd;					                        //指向解析最新数据的最后一个行尾
+    int nLastPosInRecv;                                     //指向读取接收缓冲区的最后一个位置
+    int nTotalRead;                                         //一次LT读的字数
+    int nLastInReadBuf;                                     //当前用户缓冲区还剩多少字节未处理
+    CHECK_STATE enCheckState;		                        //主状态机状态	
 	
-    METHOD enMethod;					//请求方法
+    METHOD enMethod;					                    //请求方法
     char* cpUrl;
     char* cpVersion;
     char* cpHost;
 
-    int nLastPosInSend;             //指向发送缓冲区最后的位置
-    int nBytes2Send;                //待发送的字节数
-    int nBytesHadSend;              //已发送的字节数
+    int nLastPosInSend;                                     //指向发送缓冲区最后的位置
+    int nBytes2Send;                                        //待发送的字节数
+    int nBytesHadSend;                                      //已发送的字节数
+    int nTotal;                                             //每次请求发送的总字节
 
-    bool  bUpload;              
-    char  *cpUploadFileName;         //客户端上传文件名字
-    char  carrUploadFileContent[RECVBUF_SIZE];  //上传文件内容
-    char  *cpFileContent;
-    char  *cpBoundary;              //边界符
+    char  carrFilePath[FILENAME_SIZE];                      //客户端上传文件名字
+    char  carrUploadFileContent[RECVBUF_SIZE];              //上传文件内容
+    char  cpBoundary[FILENAME_SIZE];                        //边界符
+    char  cpUploadType[FILENAME_SIZE];                      //上传文件类型
+    int   nUploadFd;                                        //接收上传文件的fd
+    bool  bUpload;                                          //此次请求是否是上传请求
+    
+    
 
     char* cpFileAddress;
 

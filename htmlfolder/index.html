@@ -1,11 +1,27 @@
 <!DOCTYPE html>
 <html lang="en" xmlns:th="http://www.thymeleaf.org">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <head>
     <title>INDEX</title>
 </head>
 <body>
 
 <h1> THIS IS INDEX!</h1>
+
+<tr>
+    <a href="downloadtest.txt" download="download.txt">测试下载</a>
+</tr>
+
+<form  method="post" enctype="multipart/form-data">   
+    <tr>
+        测试上传
+    </tr> 
+    <tr>
+        <input type="file" name="file"/>
+        <input type="submit" value="Submit" />
+    </tr>
+    
+</form>
 
 </body>
 </html>

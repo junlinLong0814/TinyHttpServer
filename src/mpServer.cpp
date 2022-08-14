@@ -235,7 +235,8 @@ bool mpServer::dealWithNewUser()
         return false;
     }
     
-    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,true,false,0);
+   // stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,true,false,0);
+    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,false,false,0);
     ++MyHttpConn::hc_snUsedCount;
     LOG_DEBUG("a new client[%d]",nUserFd);
     return true;
