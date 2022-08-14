@@ -53,6 +53,12 @@ MyHttpConn::~MyHttpConn()
 {
 }
 
+void MyHttpConn::httpConnInit(bool et)
+{
+    httpConnInit();
+    bEt = et;
+}
+
 /*处理完整请求后的初始化*/
 void MyHttpConn::httpConnInit()
 {
@@ -85,7 +91,7 @@ void MyHttpConn::initForUpload()
     memset(&stFileStat,'\0',sizeof(stFileStat));
     memset(&stIc,'\0',sizeof(stIc));
     nRowStart = 0 ,nRowEnd = 0 , nLastPosInRecv = 0 , nContent = 0, nLastInReadBuf = 0;
-    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0,nUploadFd = 0;
+    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0;
     enCheckState = CHECK_STATE_UPLOAD;
     enMethod = POST;
     if(cpFileAddress != nullptr)
@@ -96,7 +102,6 @@ void MyHttpConn::initForUpload()
 }
 
 
-/*ET读*/
 bool MyHttpConn::read()
 {
     if(nLastPosInRecv >= RECVBUF_SIZE || nSockfd < 0)
@@ -104,27 +109,14 @@ bool MyHttpConn::read()
         LOG_ERROR("ReadErro!nLastPosInRecv:%d,nSockfd:%d",nLastPosInRecv,nSockfd);
         return false;
     }
-    /*lt读*/
-    int nRead = recv(nSockfd,carrRecvBuf,RECVBUF_SIZE,0);
-    if(nRead == -1)
+    
+    if(!bEt)
     {
-        if(errno == EAGAIN || errno == EWOULDBLOCK) return true;;
-        LOG_ERROR("RecvError![%d]User,errno:%d",nSockfd,errno);
-        return false;
-    }
-    else if(nRead == 0)
-    {
-        return false;
-    }
-    nLastInReadBuf = nRead;
-    return true;
-    /*et读*/
-    for( ; ;)
-    {
-        int nRead = recv(nSockfd,carrRecvBuf+nLastPosInRecv,RECVBUF_SIZE - nLastPosInRecv,0);
+        /*lt读*/
+        int nRead = recv(nSockfd,carrRecvBuf,RECVBUF_SIZE,0);
         if(nRead == -1)
         {
-            if(errno == EAGAIN || errno == EWOULDBLOCK) break;
+            if(errno == EAGAIN || errno == EWOULDBLOCK) return true;;
             LOG_ERROR("RecvError![%d]User,errno:%d",nSockfd,errno);
             return false;
         }
@@ -132,11 +124,32 @@ bool MyHttpConn::read()
         {
             return false;
         }
-        nLastPosInRecv += nRead;
-        if(nLastPosInRecv >= RECVBUF_SIZE) 
+        nLastInReadBuf = nRead;
+        return true;
+    }
+    else
+    {
+        /*et读*/
+        for( ; ;)
         {
-            nLastPosInRecv = 0;
-            break;
+            int nRead = recv(nSockfd,carrRecvBuf+nLastPosInRecv,RECVBUF_SIZE - nLastPosInRecv,0);
+            if(nRead == -1)
+            {
+                if(errno == EAGAIN || errno == EWOULDBLOCK) break;
+                LOG_ERROR("RecvError![%d]User,errno:%d",nSockfd,errno);
+                return false;
+            }
+            else if(nRead == 0)
+            {
+                return false;
+            }
+            nLastPosInRecv += nRead;
+            nLastInReadBuf += nRead;
+            if(nLastPosInRecv >= RECVBUF_SIZE) 
+            {
+                nLastPosInRecv = 0;
+                break;
+            }
         }
     }
     return true;
@@ -299,9 +312,9 @@ bool MyHttpConn::judge_filename()
     if(bufStart != nullptr)
     {
         char *cpUploadFileName = bufStart + 7;
-        snprintf(carrFilePath,sizeof(carrFilePath),"%s/%s",FULL_OTH_FILE_ROOT,cpUploadFileName);
-
+        snprintf(carrFilePath,sizeof(carrFilePath),"%s/%d_%s",FULL_OTH_FILE_ROOT,nSockfd,cpUploadFileName);
         carrFilePath[strlen(carrFilePath)-1]='\0';
+        printf("full name:%s\n",carrFilePath);
         nUploadFd = open(carrFilePath,O_CREAT|O_TRUNC|O_APPEND|O_RDWR,FILE_MODE);
         if(nUploadFd <= 0)
         {
@@ -337,11 +350,11 @@ HTTP_CODE MyHttpConn::write_fileContent(bool& bGotFileEof)
 {
     char *pContentStart = carrRecvBuf + nRowStart;
     int nWriteLen = strlen(pContentStart);
+    
     if(nWriteLen > 0)
     {   
         char *pContentEnd = strstr(pContentStart,cpBoundary);
         bGotFileEof = (pContentEnd != nullptr);
-
         if(nUploadFd > 0)
         {
             if(bGotFileEof)
@@ -364,9 +377,14 @@ HTTP_CODE MyHttpConn::write_fileContent(bool& bGotFileEof)
                 bGotFileEof = true;
                 return INTERNAL_ERRNO;
             }
-            return FILE_REQUEST;
+            if(nWriteLen != nWriteRet)
+            {
+                printf("need2write[%d], realWriteret:[%d]\n",nWriteLen,nWriteRet);
+            }
+            
         }
     }
+    if(bGotFileEof) return FILE_REQUEST;
     return INCOMPLETE_REQUEST;
 }
 
@@ -397,7 +415,6 @@ HTTP_CODE MyHttpConn::processUpload()
     }
     if(nLastInReadBuf > 0 && bBoundary && bFileName && bType)
     {
-        printf("boundary:%s\nfilename:%s\ntype:%s\n",cpBoundary,carrFilePath,cpUploadType);
         enRet = write_fileContent(bGotFileEof);
     }
 
@@ -405,7 +422,6 @@ HTTP_CODE MyHttpConn::processUpload()
     {
         /*当前缓冲区已经读完 但仍未取得完整的文件 等待内核将另外的数据传达*/
         int nCurFd = nSockfd;
-        if(nUploadFd > 0) close(nUploadFd);
         initForUpload();
         nSockfd = nCurFd;
         return INCOMPLETE_REQUEST;

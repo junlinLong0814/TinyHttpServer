@@ -21,6 +21,7 @@ public:
     std::string strDBName;
     int nSqlPort;
     bool bLogOn;
+    bool bEt;
 
 };
 

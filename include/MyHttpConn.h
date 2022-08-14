@@ -98,10 +98,13 @@ public:
     void write(int nfd);
     void write(int nfd,bool& bflag);
 
-    /*供服务器使用的初始化函数*/
-    void httpConnInit();
+    /*供服务器使用的初始化*/
+    void httpConnInit(bool bEt);
 
 private:
+    /*供内部使用的全初始化*/
+    void httpConnInit();
+
     /*------接收-------*/
     /*ET模式读*/
     bool read();
@@ -119,10 +122,15 @@ private:
     int doRequest();
     /*接收上传文件*/
     HTTP_CODE processUpload();
+    /*边界符*/
     bool judge_boundary();
+    /*上传的文件名*/
     bool judge_filename(); 
+    /*上传的文件类型*/
     bool judge_uploadType();
+    /*针对上传请求的初始化*/
     void initForUpload();
+    /*将上传文件内容写入本地*/
     HTTP_CODE write_fileContent(bool& bGotFileEof);
 
     /*-------发送----------*/
@@ -165,12 +173,13 @@ private:
     int nSockfd;                                            //socket
     MySqlConnPool* pSqlPool;                                //mysql连接池
 
+    bool bEt;                                               //是否ET读
+
     bool bLinger;                                           //是否keep-live
     int nContent;                                           //请求主体长度
     int nRowStart;					                        //http报文每行行首
 	int nRowEnd;					                        //指向解析最新数据的最后一个行尾
     int nLastPosInRecv;                                     //指向读取接收缓冲区的最后一个位置
-    int nTotalRead;                                         //一次LT读的字数
     int nLastInReadBuf;                                     //当前用户缓冲区还剩多少字节未处理
     CHECK_STATE enCheckState;		                        //主状态机状态	
 	

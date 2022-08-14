@@ -43,7 +43,8 @@ public:
                       std::string strUrl,
                       std::string strDBName,
                       int nSqlPort,
-                      bool bLog);
+                      bool bLog,
+                      bool bEt);
     void mpServerInit();
     /*开始监听*/
     void mpServerListen();
@@ -81,6 +82,7 @@ private:
     /*Epoll*/
     epoll_event stEvents[MAX_EVENT_NUMBER]; 
     int nEpollFd;
+    bool bEt; 
     
 
     /*线程池*/

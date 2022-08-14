@@ -30,7 +30,8 @@ void mpServer::mpServerInit(int nPort,
                             std::string strlUrl,
                             std::string strlDBName,
                             int nlSqlPort,
-                            bool bLog)
+                            bool bLog,
+                            bool et)
 {
     unPort = nPort < 0 ? 8888 : nPort;
     nThreadNum = nThread < 0 ? 4 : nThread;
@@ -42,6 +43,7 @@ void mpServer::mpServerInit(int nPort,
     strDBName = strlDBName;
     nSqlPort = nlSqlPort < 0 ? 15 : nlSqlPort;
     bLogOn = bLog;
+    bEt = et;
     //printf("Server Init Succeed\n");
 }
 
@@ -70,7 +72,7 @@ void mpServer::mphttpConnInit()
 {
     for(int i = 0 ; i < MAX_FD ; ++i)
     {
-        arrUsers[i].httpConnInit();
+        arrUsers[i].httpConnInit(bEt);
     }
 }
 
@@ -235,8 +237,8 @@ bool mpServer::dealWithNewUser()
         return false;
     }
     
-   // stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,true,false,0);
-    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,false,false,0);
+    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,bEt,false,0);
+   // stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,false,false,0);
     ++MyHttpConn::hc_snUsedCount;
     LOG_DEBUG("a new client[%d]",nUserFd);
     return true;
