@@ -14,6 +14,9 @@ mpServer::mpServer()
     strDBName = "test" ;
     nSqlPort = 15;
     bLogOn = true;
+    bSoLinger = true;
+    unClientAddrLength = sizeof(stClientAddress);
+    bzero(&stClientAddress,unClientAddrLength);
 }
 
 void mpServer::mpServerInit()
@@ -31,7 +34,8 @@ void mpServer::mpServerInit(int nPort,
                             std::string strlDBName,
                             int nlSqlPort,
                             bool bLog,
-                            bool et)
+                            bool et,
+                            bool blinger)
 {
     unPort = nPort < 0 ? 8888 : nPort;
     nThreadNum = nThread < 0 ? 4 : nThread;
@@ -44,6 +48,7 @@ void mpServer::mpServerInit(int nPort,
     nSqlPort = nlSqlPort < 0 ? 15 : nlSqlPort;
     bLogOn = bLog;
     bEt = et;
+    bSoLinger = blinger;
     //printf("Server Init Succeed\n");
 }
 
@@ -74,6 +79,7 @@ void mpServer::mphttpConnInit()
     {
         arrUsers[i].httpConnInit(bEt);
     }
+    //printf("[%lld]KB\n",sizeof(arrUsers)/8/1024);
 }
 
 void mpServer::mpServerListen()
@@ -126,7 +132,6 @@ void mpServer::mpServerListen()
 void mpServer::mpServerRun()
 {
     bool bStopServer = false;
-    
     while(!bStopServer)
     {
         int nActiveFd = epoll_wait(nEpollFd,stEvents,MAX_EVENT_NUMBER,-1);
@@ -139,7 +144,6 @@ void mpServer::mpServerRun()
         for(int i = 0 ; i < nActiveFd; ++i)
         {
             int nSockfd = stEvents[i].data.fd;
-            LOG_DEBUG("client<%d>,events:%d",nSockfd,stEvents[i].events);
             if(nSockfd == nListenfd)
             {
                 /*新接收的客户*/
@@ -220,10 +224,6 @@ bool mpServer::dealExitUser(int nfd)
 
 bool mpServer::dealWithNewUser()
 {
-    struct sockaddr_in stClientAddress;
-    socklen_t unClientAddrLength = sizeof(stClientAddress);
-    bzero(&stClientAddress,(size_t)unClientAddrLength);
-
     int nUserFd = accept(nListenfd,(struct sockaddr*)&stClientAddress,&unClientAddrLength);
     if(nUserFd < 0)
     {
@@ -232,15 +232,16 @@ bool mpServer::dealWithNewUser()
     }
     if(MyHttpConn::hc_snUsedCount >= MAX_FD)
     {
-        LOG_WARNING("Too much user!");
+        printf("Too much user!");
         close(nUserFd);
         return false;
     }
     
-    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,bEt,false,0);
+    stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,bEt,bSoLinger,0);
    // stTool.addfd2Epoll(nUserFd,nEpollFd,EPOLLIN,true,false,false,0);
     ++MyHttpConn::hc_snUsedCount;
     LOG_DEBUG("a new client[%d]",nUserFd);
+
     return true;
 
 }

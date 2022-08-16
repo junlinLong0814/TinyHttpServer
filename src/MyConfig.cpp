@@ -12,13 +12,14 @@ MyConfig::MyConfig()
     strDBName = "test";
     nSqlPort = 15;
     bLogOn = true;
-    bEt = false;
+    bEt = true;
+    bLinger = true;
 }
 
 void MyConfig::parseCommandLine(int argc,char* argv[])
 {
     int nopt ;
-    const char* cpOption = "s::p::t::l::e";
+    const char* cpOption = "s:p:t:l:e:o:";
     bool bStartConfig = true;
     while(((nopt = getopt(argc,argv,cpOption)) != -1) && 
             bStartConfig)
@@ -42,7 +43,13 @@ void MyConfig::parseCommandLine(int argc,char* argv[])
             }
             case 'e':
             {
-                bEt = true;
+                bEt = atoi(optarg);
+                break;
+            }
+            case 'o':
+            {
+                bLinger = atoi(optarg);
+                break;
             }
             default:
             {

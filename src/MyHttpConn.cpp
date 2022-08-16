@@ -19,6 +19,7 @@ int htRemovefd(int nFd,int nEpollFd)
 {
     LOG_DEBUG("[%d] User closed!",nFd);
     epoll_ctl(nEpollFd,EPOLL_CTL_DEL,nFd,0);
+    --MyHttpConn::hc_snUsedCount;
     close(nFd);
 }
 
@@ -314,7 +315,6 @@ bool MyHttpConn::judge_filename()
         char *cpUploadFileName = bufStart + 7;
         snprintf(carrFilePath,sizeof(carrFilePath),"%s/%d_%s",FULL_OTH_FILE_ROOT,nSockfd,cpUploadFileName);
         carrFilePath[strlen(carrFilePath)-1]='\0';
-        printf("full name:%s\n",carrFilePath);
         nUploadFd = open(carrFilePath,O_CREAT|O_TRUNC|O_APPEND|O_RDWR,FILE_MODE);
         if(nUploadFd <= 0)
         {
@@ -376,10 +376,6 @@ HTTP_CODE MyHttpConn::write_fileContent(bool& bGotFileEof)
             {
                 bGotFileEof = true;
                 return INTERNAL_ERRNO;
-            }
-            if(nWriteLen != nWriteRet)
-            {
-                printf("need2write[%d], realWriteret:[%d]\n",nWriteLen,nWriteRet);
             }
             
         }
@@ -525,6 +521,7 @@ HTTP_CODE MyHttpConn::parseContent()
         /*GET请求 不对content处理*/
         /*默认发送登录页面*/
         if(cpUrl==nullptr || strlen(cpUrl) <= 0) cpUrl = "/login.html";
+        if(strstr(cpUrl,"pressure")) return FILE_REQUEST;
     }
 
     if(cpUrl == nullptr 

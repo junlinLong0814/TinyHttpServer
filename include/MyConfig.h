@@ -22,6 +22,7 @@ public:
     int nSqlPort;
     bool bLogOn;
     bool bEt;
+    bool bLinger;
 
 };
 

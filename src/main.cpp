@@ -9,7 +9,8 @@ int main(int argc, char *argv[])
 
     mpServer.mpServerInit(stConfig.nPort,stConfig.nThreadNum,stConfig.nMaxTasks,
                             stConfig.strUserName,stConfig.strPwd,stConfig.nSqlConnNum,
-                            stConfig.strUrl,stConfig.strDBName,stConfig.nSqlPort,stConfig.bLogOn,stConfig.bEt);
+                            stConfig.strUrl,stConfig.strDBName,stConfig.nSqlPort,stConfig.bLogOn,
+                            stConfig.bEt,stConfig.bLinger);
     mpServer.mplogInit();
 
     mpServer.mpsqlPoolInit();

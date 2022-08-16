@@ -30,7 +30,6 @@ public:
 					const char* pcFileName,
 					const int nLine,
 					const char* pcFunctionName,
-					const char* time,
 					const char *fmt, ...);
 
 private:
@@ -68,10 +67,10 @@ private:
 };
 
 
-#define LOG_DEBUG(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[DEBUG]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
-#define LOG_INFO(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[INFO]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
-#define LOG_WARNING(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[WARNING]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
-#define LOG_ERROR(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[ERROR]:",__FILE__,__LINE__,__FUNCTION__,__TIME__,##__VA_ARGS__ );}
+#define LOG_DEBUG(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[DEBUG]:",__FILE__,__LINE__,__FUNCTION__,##__VA_ARGS__ );}
+#define LOG_INFO(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[INFO]:",__FILE__,__LINE__,__FUNCTION__,##__VA_ARGS__ );}
+#define LOG_WARNING(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[WARNING]:",__FILE__,__LINE__,__FUNCTION__,##__VA_ARGS__ );}
+#define LOG_ERROR(...) if(MyLog::getLogInstance()->bLogOn) {MyLog::getLogInstance()->newWriteLog("[ERROR]:",__FILE__,__LINE__,__FUNCTION__,##__VA_ARGS__ );}
 
 // #define LOG_DEBUG(...) {MyLog::GetLogInstance()->newWriteLog("[Debug]:", ##__VA_ARGS__);}
 // #define LOG_INFO(...) {MyLog::GetLogInstance()->newWriteLog("[Info]:", ##__VA_ARGS__);}

@@ -44,7 +44,8 @@ public:
                       std::string strDBName,
                       int nSqlPort,
                       bool bLog,
-                      bool bEt);
+                      bool bEt,
+                      bool bLinger);
     void mpServerInit();
     /*开始监听*/
     void mpServerListen();
@@ -73,8 +74,11 @@ public:
 private:
     /*socket需要的基础属性*/
     struct sockaddr_in stServerAddress;
+    struct sockaddr_in stClientAddress;
+    socklen_t unClientAddrLength;
     unsigned int unPort;
     int nListenfd; 
+    bool bSoLinger;
 
     /*Http*/
     MyHttpConn arrUsers[MAX_FD];

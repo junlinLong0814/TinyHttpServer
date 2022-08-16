@@ -77,16 +77,18 @@ bool MyLog::newWriteLog(std::string strInfoType,
 					const char* pcFileName,
 					const int nLine,
 					const char* pcFunctionName,
-					const char* pcTime,
 					const char *fmt, ...)
 {
 	time_t tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
 	struct tm &tm = *localtime(&tt);
 
+	int nHour = tm.tm_hour;
+	int nMin = tm.tm_min;
+	int nSec = tm.tm_sec;
 	int ntoday = (tm.tm_mday);
 	int nmonth = (tm.tm_mon + 1);
 	int nyear = (tm.tm_year + 1900);
-
+	
 	if (ntoday != ntoday_
 		|| nmonth != nmonth_
 		|| nyear != nyear_)
@@ -103,6 +105,7 @@ bool MyLog::newWriteLog(std::string strInfoType,
 			return false;
 		}
 	}
+	
 	//组装log实际内容
 	char s[256];
 	memset(s,'\0',sizeof(s));
@@ -117,7 +120,7 @@ bool MyLog::newWriteLog(std::string strInfoType,
 	{
 		std::lock_guard<std::mutex> lock(mlogBuf);
 		memset(clogBuf_, '\0', sizeof(clogBuf_));
-		snprintf(clogBuf_,sizeof(clogBuf_)-1, "%s %04d-%02d-%02d %s [%s/%s:%d] %s\n",strInfoType.c_str(),nyear,nmonth, ntoday, pcTime, pcFileName,pcFunctionName,nLine,tmp.c_str());
+		snprintf(clogBuf_,sizeof(clogBuf_)-1, "%s %04d-%02d-%02d %02d:%02d:%02d [%s/%s:%d] %s\n",strInfoType.c_str(),nyear,nmonth, ntoday, nHour,nMin,nSec, pcFileName,pcFunctionName,nLine,tmp.c_str());
 		appendBuf();
 	}
 
