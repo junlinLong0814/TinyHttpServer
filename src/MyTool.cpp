@@ -69,7 +69,7 @@ void MyTool::addfd2Epoll(int nFd,int nEpollFd,int nOpt,bool bOneShot,bool bEt,bo
 {
     epoll_event stEpollEvent;
     stEpollEvent.data.fd = nFd;
-    stEpollEvent.events = EPOLLIN | EPOLLRDHUP;
+    stEpollEvent.events = EPOLLIN | EPOLLRDHUP | EPOLLHUP;
     if(bEt)
     {
         stEpollEvent.events |= EPOLLET;

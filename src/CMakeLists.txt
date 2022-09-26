@@ -2,7 +2,7 @@ aux_source_directory (. SRC_LIST)
 
 include_directories (../include)
 
-add_compile_options (-std=c++11)
+add_compile_options (-std=c++17)
 
 include_directories("/usr/include/mysql")
 link_directories("/usr/lib/x86_64-linux-gnu")

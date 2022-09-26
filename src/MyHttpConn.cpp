@@ -52,6 +52,9 @@ MyHttpConn::MyHttpConn(int nFd):nSockfd(nFd)
 
 MyHttpConn::~MyHttpConn()
 {
+    if(!stBuffer.empty()){
+        stBuffer.drstory_buff();
+    }
 }
 
 void MyHttpConn::httpConnInit(bool et)
@@ -63,6 +66,9 @@ void MyHttpConn::httpConnInit(bool et)
 /*处理完整请求后的初始化*/
 void MyHttpConn::httpConnInit()
 {
+    stBuffer = (std::move(Buffer((size_t)0,RECVBUF_SIZE)));
+    str_body.resize(0);
+    str_line.resize(0);
     memset(carrRecvBuf,'\0',sizeof(carrRecvBuf));
     memset(carrSendBuf,'\0',sizeof(carrSendBuf));
     memset(carrUploadFileContent,'\0',sizeof(carrUploadFileContent));
@@ -74,14 +80,14 @@ void MyHttpConn::httpConnInit()
     pSqlPool = MySqlConnPool::getSqlConnPoolInstance();
     bLinger = false,bUpload = false;
     nRowStart = 0 ,nRowEnd = 0 , nLastPosInRecv = 0 , nContent = 0, nLastInReadBuf = 0;
-    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0,nUploadFd = 0;
+    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0,nUploadFd = 0,nBoundaryidx = 0;
     enCheckState = CHECK_STATE_REQUESTLINE;
     enMethod = GET;
     if(cpFileAddress != nullptr)
     {
         unmap();
     }
-    cpUrl = nullptr, cpVersion = nullptr, cpHost = nullptr,cpFileAddress = nullptr;
+    cpFileAddress = nullptr;
 }
 
 /*用于处理上传大文件的连续请求*/
@@ -99,62 +105,49 @@ void MyHttpConn::initForUpload()
     {
         unmap();
     }
-    cpUrl = nullptr, cpVersion = nullptr, cpHost = nullptr;
 }
 
-
-bool MyHttpConn::read()
-{
-    if(nLastPosInRecv >= RECVBUF_SIZE || nSockfd < 0)
-    {
-        LOG_ERROR("ReadErro!nLastPosInRecv:%d,nSockfd:%d",nLastPosInRecv,nSockfd);
+bool MyHttpConn::read(){
+    if(nSockfd < 0){
+        LOG_ERROR("nSockfd:%d",nSockfd);
         return false;
     }
-    
-    if(!bEt)
-    {
-        /*lt读*/
-        int nRead = recv(nSockfd,carrRecvBuf,RECVBUF_SIZE,0);
-        if(nRead == -1)
-        {
-            if(errno == EAGAIN || errno == EWOULDBLOCK) return true;;
-            LOG_ERROR("RecvError![%d]User,errno:%d",nSockfd,errno);
+
+    do{
+        char newBuff[65536];
+        struct iovec iov[2];
+        const size_t writeable_size = stBuffer.writeable_size();
+
+        iov[0].iov_base = stBuffer.raw_ptr() + stBuffer.size();
+        iov[0].iov_len = writeable_size;
+        iov[1].iov_base = newBuff;
+        iov[1].iov_len = sizeof(newBuff);
+
+        const ssize_t read_ret = readv(nSockfd,iov,2);
+        //printf("read_ret:%ld,writeable_size:%d\n",read_ret,writeable_size);
+        if(read_ret < 0){
+            if(errno == EAGAIN || errno == EWOULDBLOCK) return true;
+            LOG_ERROR("Read Error[%d]!",errno);
             return false;
         }
-        else if(nRead == 0)
-        {
+        else if(read_ret == 0){
             return false;
         }
-        nLastInReadBuf = nRead;
-        return true;
-    }
-    else
-    {
-        /*et读*/
-        for( ; ;)
-        {
-            int nRead = recv(nSockfd,carrRecvBuf+nLastPosInRecv,RECVBUF_SIZE - nLastPosInRecv,0);
-            if(nRead == -1)
-            {
-                if(errno == EAGAIN || errno == EWOULDBLOCK) break;
-                LOG_ERROR("RecvError![%d]User,errno:%d",nSockfd,errno);
-                return false;
-            }
-            else if(nRead == 0)
-            {
-                return false;
-            }
-            nLastPosInRecv += nRead;
-            nLastInReadBuf += nRead;
-            if(nLastPosInRecv >= RECVBUF_SIZE) 
-            {
-                nLastPosInRecv = 0;
-                break;
+        else{
+            if(read_ret <= writeable_size){
+                stBuffer.add_size(read_ret);
+            }else {
+                size_t outlimit_size = read_ret - writeable_size;
+                
+                stBuffer.add_size(writeable_size);
+                stBuffer.append_data(newBuff,outlimit_size);
             }
         }
-    }
+    }while(bEt);
+
     return true;
 }
+
 
 LINE_STATUS MyHttpConn::parseLine()
 {
@@ -163,6 +156,10 @@ LINE_STATUS MyHttpConn::parseLine()
     char* cpNextRowEnd = strstr(cpNextRowStart,"\r\n");
     if(cpNextRowEnd == nullptr)
     {
+        int nWait2Parse = strlen(cpNextRowStart);
+        memcpy(carrRecvBuf,cpNextRowStart,nWait2Parse);
+        nLastPosInRecv = nWait2Parse;
+        /*将当前缓冲区的字符前挪*/
         return LINE_CONTINUE;
     }
     *cpNextRowEnd = '\0';
@@ -170,8 +167,6 @@ LINE_STATUS MyHttpConn::parseLine()
     *cpNextRowEnd = '\0';
     ++cpNextRowEnd;
 
-
-    
     nRowStart = nRowEnd;
     nRowEnd = cpNextRowEnd - carrRecvBuf;
     nLastInReadBuf -= (nRowEnd - nRowStart);
@@ -182,19 +177,15 @@ LINE_STATUS MyHttpConn::parseLine()
 /*解析请求行*/
 HTTP_CODE MyHttpConn::parseRequestLine()
 {
-    char* cpRequestLine = carrRecvBuf + nRowStart;
+    char *cpRequestLine = const_cast<char*>(str_line.data());
     /*http方法*/
-    char* cpMethod = strstr(cpRequestLine,"GET");
-    enMethod = GET;
-    if(cpMethod == nullptr)
-    {
-        cpMethod = strstr(cpRequestLine,"POST");
-        if(cpMethod == nullptr)
-        {
-            LOG_WARNING("UnDefined Method![%d]User",nSockfd);
-            return BAD_REQUEST;
-        }
+    if(strstr(cpRequestLine,"GET")){
+        enMethod = GET;
+    }else if(strstr(cpRequestLine,"POST")){
         enMethod = POST;
+    }else{
+        LOG_WARNING("UnDefined Method![%d]User",nSockfd);
+        return BAD_REQUEST;
     }
     
     /*http版本*/
@@ -204,34 +195,29 @@ HTTP_CODE MyHttpConn::parseRequestLine()
         LOG_WARNING("[%s]UnSupported Version![%d]User",cpRequestLine,nSockfd);
         return BAD_REQUEST;
     }
-    --cpTmpVersion;
-    *cpTmpVersion = '\0';
-    cpVersion = "HTTP/1.1";
+    *(--cpTmpVersion) = '\0';
+    str_version = "HTTP/1.1";
 
     /*请求url*/
-    char* cpTmpUrl = strstr(cpRequestLine,"//");
-    if(cpTmpUrl == nullptr)
-    {
-        cpTmpUrl = strstr(cpRequestLine,"/");
-        if(cpTmpUrl == nullptr) 
-        {
-            return BAD_REQUEST;
-        }
-        if(strlen(cpTmpUrl) == 1)
-        {
-            cpTmpUrl = "/login.html";
+    char *purl = nullptr;
+    if((purl = strstr(cpRequestLine,"//"))!=nullptr){
+        if(strlen(++purl) == 1){
+            str_url = "/login.html";
+        }else{
+            str_url = purl;
         }
     }
-    else
-    {
-        ++cpTmpUrl;
-        /*默认访问登录页面*/
-        if(strlen(cpTmpUrl) == 1)
-        {
-            cpTmpUrl = "/login.html";
+    else if((purl = strstr(cpRequestLine,"/"))!=nullptr){
+        if(strlen(purl) == 1){
+            str_url = "/login.html";
+        }else{
+            str_url = purl;
         }
     }
-    cpUrl = cpTmpUrl;
+    else{
+        LOG_ERROR("Recv a invalid rqLine");
+        return BAD_REQUEST;
+    }
 
     /*处理完请求行--->开始处理请求头*/
     enCheckState = CHECK_STATE_REQUESTHEADER;
@@ -241,20 +227,13 @@ HTTP_CODE MyHttpConn::parseRequestLine()
 /*解析请求头*/
 HTTP_CODE MyHttpConn::parseRequestHeader()
 {
-    char* cpRequestHeader = carrRecvBuf + nRowStart;
-    
+    char* cpRequestHeader = const_cast<char*>(str_line.c_str());
     char*  cpTmpInfo = nullptr;
-    if(cpRequestHeader[0] == '\0')
+    if(cpRequestHeader[0] == '\0' || strcmp(str_line.c_str(),"\r\n") == 0)
     {
         /*空行 代表消息头处理完毕 判定是否需要处理content内容*/
-        if(nContent != 0 || enMethod == POST)
-        {
-            enCheckState = CHECK_STATE_CONTENT;
-            if(bUpload)
-            {
-                /*这是一个上传文件请求*/
-                enCheckState = CHECK_STATE_UPLOAD;
-            }
+        if(nContent > 0){
+            enCheckState = bUpload ? CHECK_STATE_UPLOAD : CHECK_STATE_CONTENT;
             return INCOMPLETE_REQUEST;
         }
         /*代表该http请求已经处理完毕*/
@@ -280,7 +259,7 @@ HTTP_CODE MyHttpConn::parseRequestHeader()
     {
         cpTmpInfo += 5;
         cpTmpInfo += strspn(cpTmpInfo," \t");
-        cpHost = cpTmpInfo;
+        str_host = cpTmpInfo;
     }
     else if((cpTmpInfo = strstr(cpRequestHeader,"multipart/form-data")) != nullptr )
     {
@@ -313,11 +292,12 @@ bool MyHttpConn::judge_filename()
     if(bufStart != nullptr)
     {
         char *cpUploadFileName = bufStart + 7;
-        snprintf(carrFilePath,sizeof(carrFilePath),"%s/%d_%s",FULL_OTH_FILE_ROOT,nSockfd,cpUploadFileName);
+        snprintf(carrFilePath,sizeof(carrFilePath),"%s/%s",FULL_OTH_FILE_ROOT,cpUploadFileName);
         carrFilePath[strlen(carrFilePath)-1]='\0';
         nUploadFd = open(carrFilePath,O_CREAT|O_TRUNC|O_APPEND|O_RDWR,FILE_MODE);
-        if(nUploadFd <= 0)
+        if((nUploadFd <= 0))
         {
+            printf("not open!\n");
             LOG_ERROR("Create upload file error! [%d]",errno);
             return false;
         }
@@ -380,7 +360,13 @@ HTTP_CODE MyHttpConn::write_fileContent(bool& bGotFileEof)
             
         }
     }
-    if(bGotFileEof) return FILE_REQUEST;
+    if(bGotFileEof) {
+        if(nUploadFd > 0){
+            close(nUploadFd);
+            nUploadFd = 0;
+        }
+        return FILE_REQUEST;
+    }
     return INCOMPLETE_REQUEST;
 }
 
@@ -408,6 +394,7 @@ HTTP_CODE MyHttpConn::processUpload()
         bBoundary = strlen(cpBoundary) > 0;
         bFileName = strlen(carrFilePath) > 0; 
         bType = strlen(cpUploadType) > 0;
+        //LOG_DEBUG("cpBoundary:%s\ncarrFilePath:%s\ncpUploadType:%s\n",cpBoundary,carrFilePath,cpUploadType);
     }
     if(nLastInReadBuf > 0 && bBoundary && bFileName && bType)
     {
@@ -428,10 +415,12 @@ HTTP_CODE MyHttpConn::processUpload()
 
 HTTP_CODE MyHttpConn::parseContent()
 {
-    //nLastInReadBuf -= (nRowEnd - nRowStart);
-    nRowStart = nRowEnd;
-    char* cpTmpContent = carrRecvBuf + nRowStart;
-    nRowEnd = strlen(cpTmpContent);
+    char* cpTmpContent = nullptr;
+    if(!str_body.empty()){
+        cpTmpContent = const_cast<char*>(str_body.data());
+        printf("body:%s\n",str_body.c_str());
+    }
+    
     /*Post*/
     if(enMethod == POST)
     {
@@ -465,13 +454,13 @@ HTTP_CODE MyHttpConn::parseContent()
         {
             int nMatchRows = mysql_num_rows(pResult);
 
-            if(strstr(cpUrl,"register"))
+            if(strstr(str_url.data(),"register"))
             {
                 /*注册页面*/
                 if(nMatchRows != 0)
                 {
                     /*原用户已经注册*/
-                    cpUrl = "/repeatRegister.html";
+                    str_url = "/repeatRegister.html";
                 }
                 else
                 {
@@ -482,16 +471,16 @@ HTTP_CODE MyHttpConn::parseContent()
                         LOG_ERROR("MySql Insert Error![%s]",strSqlInsert.c_str());
                         return INTERNAL_ERRNO;
                     }
-                    cpUrl = "/registerSucceed.html";
+                    str_url = "/registerSucceed.html";
                 }
             }
-            else if(strstr(cpUrl,"login"))
+            else if(strstr(str_url.data(),"login"))
             {
                 /*登录界面*/
                 if(nMatchRows == 0)
                 {
                     /*还未注册*/
-                    cpUrl = "/register.html";
+                    str_url = "/register.html";
                 }
                 else 
                 {
@@ -500,12 +489,12 @@ HTTP_CODE MyHttpConn::parseContent()
                     if(strStoredPwd == strPwd)
                     {
                         /*密码正常-->登录成功*/
-                        cpUrl = "/index.html";
+                        str_url = "/index.html";
                     }
                     else 
                     {
                         /*密码错误-->提示失败*/
-                        cpUrl = "/loginError.html";
+                        str_url = "/loginError.html";
                     }
                 }
             }
@@ -520,24 +509,22 @@ HTTP_CODE MyHttpConn::parseContent()
     {
         /*GET请求 不对content处理*/
         /*默认发送登录页面*/
-        if(cpUrl==nullptr || strlen(cpUrl) <= 0) cpUrl = "/login.html";
-        if(strstr(cpUrl,"pressure")) return FILE_REQUEST;
+        if(str_url.empty() ) str_url = "/login.html";
+        if(strstr(str_url.data(),"pressure")) return FILE_REQUEST;
     }
 
-    if(cpUrl == nullptr 
-       // || strstr(cpUrl,".html") == nullptr
+    if(str_url.empty()
         )
     {
-        cpUrl = "/login.html";
+        str_url = "/login.html";
     }
-    
-    std::string strUrl(cpUrl);
+
     std::string strFullAddress = FULL_HTML_ROOT;
-    if(strstr(cpUrl,"html") == nullptr)
+    if(strstr(str_url.data(),"html") == nullptr)
     {
         strFullAddress = FULL_OTH_FILE_ROOT;
     }
-    strFullAddress +=  strUrl;
+    strFullAddress +=  str_url;
     char* cpFullAddress = const_cast<char*>(strFullAddress.c_str());
 
     if(stat(cpFullAddress,&stFileStat) < 0)
@@ -561,24 +548,35 @@ HTTP_CODE MyHttpConn::parseContent()
     return FILE_REQUEST;
 }
 
-
 /*解析报文入口*/
-HTTP_CODE MyHttpConn::processRead()
-{
+HTTP_CODE MyHttpConn::processRead(){
     LINE_STATUS enCurLineStatus = LINE_COMPLETE;
     HTTP_CODE enCurHttpCode = NO_REQUEST;
-
-    while(  (enCheckState == CHECK_STATE_UPLOAD) ||
-            (enCurLineStatus == LINE_COMPLETE && enCheckState == CHECK_STATE_CONTENT) ||
-            ((enCurLineStatus=parseLine()) == LINE_COMPLETE) )
-    {
+    while(!stBuffer.empty())
+        {
+        if(enCheckState == CHECK_STATE_UPLOAD ||
+            enCheckState == CHECK_STATE_CONTENT){
+            /*主状态机：body*/
+            stBuffer.read_all(str_body);
+            if(str_body.size() < nContent){
+                return INCOMPLETE_REQUEST;
+            }
+        }
+        else{
+            str_line.resize(0);
+            //printf("cur_size:%d,",stBuffer.size());
+            /*其余状态 逐行解析*/
+            if(!stBuffer.find_str(str_line,"\r\n")){
+                return INCOMPLETE_REQUEST;
+            }
+            //printf("str_line:%s\n",str_line.c_str());
+        }
         switch(enCheckState)
         {
             /*请求行*/
             case CHECK_STATE_REQUESTLINE:
             {
-                enCurHttpCode = parseRequestLine();
-                if(enCurHttpCode == BAD_REQUEST)
+                if(parseRequestLine() == BAD_REQUEST)
                 {
                     return BAD_REQUEST;
                 }
@@ -588,28 +586,23 @@ HTTP_CODE MyHttpConn::processRead()
             case CHECK_STATE_REQUESTHEADER:
             {
                 enCurHttpCode = parseRequestHeader();
-                if(GET_REQUEST == enCurHttpCode)
-                {
-                    enCurHttpCode = parseContent();
-                    return enCurHttpCode;
-                }
-                else if(BAD_REQUEST == enCurHttpCode)
+                if(enCurHttpCode == BAD_REQUEST)
                 {
                     return BAD_REQUEST;
+                }else if(enCurHttpCode == GET_REQUEST){
+                    return parseContent(); 
                 }
                 break;
             }
             /*报文主体*/
             case CHECK_STATE_CONTENT:
             {
-                enCurHttpCode = parseContent();
-                return enCurHttpCode;
+                return parseContent();
             }
             /*上传请求*/
             case CHECK_STATE_UPLOAD:
             {
-                enCurHttpCode = processUpload();
-                return enCurHttpCode;
+                return processUpload();
             }
             default:
             {
@@ -617,8 +610,10 @@ HTTP_CODE MyHttpConn::processRead()
             }
         }
     }
-    return enCurHttpCode;
+    return INCOMPLETE_REQUEST;
+
 }
+
 
 bool MyHttpConn::closeConn()
 {
@@ -641,7 +636,11 @@ bool MyHttpConn::addStatusLine(int nStatus,const char* cpTitle)
 
 bool MyHttpConn::addResponseHeader(int nWait2SendSize)
 {
-    return addContentLength(nWait2SendSize) && addLinger() && addBlankLine();
+    std::string str = "text/html";
+    if(!str_url.empty() && strstr(str_url.data(),".pdf")){
+        str="application/pdf";
+    }
+    return addContentLength(nWait2SendSize) && addContentType(str.c_str()) &&addLinger() && addBlankLine();
 }
 
 bool MyHttpConn::addContentLength(int nWait2SendSize)
@@ -782,10 +781,6 @@ void MyHttpConn::unmap()
     }   
 }
 
-void MyHttpConn::write(int nfd)
-{
-    LOG_INFO("DeBug:write to [%d],nBytes2Send[%d],url[%s]",nSockfd,nBytes2Send,cpUrl);
-}
 
 void MyHttpConn::write(int nfd,bool& bflag)
 {
@@ -798,7 +793,7 @@ void MyHttpConn::write(int nfd,bool& bflag)
         return ;
     }
 
-    LOG_INFO("DeBug:write to [%d],nBytes2Send[%d],url[%s]",nSockfd,nBytes2Send,cpUrl);
+    LOG_INFO("DeBug:write to [%d],nBytes2Send[%d],url[%s]",nSockfd,nBytes2Send,str_url.data());
 
     int nRet = 0;
     for( ; ; )
@@ -865,7 +860,8 @@ void MyHttpConn::process(int fd)
     if(bReadSucceed)
     {
         HTTP_CODE enRet = processRead();
-        if(enRet == NO_REQUEST)
+        printf("%d processread\n",enRet);
+        if(enRet == NO_REQUEST || enRet == INCOMPLETE_REQUEST)
         {
             htModfd(fd,hc_snEpollFd,EPOLLIN,true); 
             return ; 

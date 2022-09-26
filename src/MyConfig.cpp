@@ -3,7 +3,7 @@
 MyConfig::MyConfig()
 {
     nPort = 8888;
-    nThreadNum = 4;
+    nThreadNum = 1;
     nMaxTasks = 10000;
     strUserName = "ljl";
     strPwd = "123456";

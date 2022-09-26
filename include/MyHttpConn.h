@@ -11,6 +11,7 @@
 #include <string>
 #include <iostream>
 #include <sys/mman.h>
+#include <fstream>
 #include <stdarg.h>
 #include <sys/epoll.h>
 #include <sys/sendfile.h>
@@ -21,6 +22,7 @@
 #include "MySqlConnPool.h"
 #include "MyTool.h"
 #include "MySemaphore.h"
+#include "MyBuff.h"
 
 #define RECVBUF_SIZE 2048
 #define SENDBUF_SIZE 2048
@@ -45,13 +47,15 @@ enum METHOD
 /*主状态机状态
 1.请求分析请求行
 2.请求分析请求头
-3.请求分析请求内容*/
+3.请求分析请求内容
+4.上传
+*/
 enum CHECK_STATE
 {
     CHECK_STATE_REQUESTLINE=0,
     CHECK_STATE_REQUESTHEADER,
     CHECK_STATE_CONTENT,
-    CHECK_STATE_UPLOAD
+    CHECK_STATE_UPLOAD    
 };
 
 /*从状态机的三种状态
@@ -107,9 +111,11 @@ private:
 
     /*------接收-------*/
     /*ET模式读*/
+    bool read(int flag);
     bool read();
     /*处理读*/
     HTTP_CODE processRead();
+    HTTP_CODE processRead(int flag);
     /*解析行内容*/
     LINE_STATUS parseLine();
     /*分析请求行*/
@@ -184,9 +190,6 @@ private:
     CHECK_STATE enCheckState;		                        //主状态机状态	
 	
     METHOD enMethod;					                    //请求方法
-    char* cpUrl;
-    char* cpVersion;
-    char* cpHost;
 
     int nLastPosInSend;                                     //指向发送缓冲区最后的位置
     int nBytes2Send;                                        //待发送的字节数
@@ -199,12 +202,16 @@ private:
     char  cpUploadType[FILENAME_SIZE];                      //上传文件类型
     int   nUploadFd;                                        //接收上传文件的fd
     bool  bUpload;                                          //此次请求是否是上传请求
+    int   nBoundaryidx;                                     //已经接收到了x个边界符
     
-    
-
     char* cpFileAddress;
 
-
+    Buffer stBuffer;
+    std::string str_body;
+    std::string str_line;
+    std::string str_url;
+    std::string str_version;
+    std::string str_host;
 };
 
 
