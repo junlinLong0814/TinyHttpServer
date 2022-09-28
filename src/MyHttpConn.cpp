@@ -52,8 +52,8 @@ MyHttpConn::MyHttpConn(int nFd):nSockfd(nFd)
 
 MyHttpConn::~MyHttpConn()
 {
-    if(!stBuffer.empty()){
-        stBuffer.drstory_buff();
+    if(!st_rbuf.empty()){
+        st_rbuf.drstory_buff();
     }
 }
 
@@ -66,19 +66,27 @@ void MyHttpConn::httpConnInit(bool et)
 /*处理完整请求后的初始化*/
 void MyHttpConn::httpConnInit()
 {
-    stBuffer = (std::move(Buffer((size_t)0,RECVBUF_SIZE)));
+    st_rbuf = std::move(Buffer((size_t)0,RECVBUF_SIZE));
     str_body.resize(0);
     str_line.resize(0);
-    memset(carrSendBuf,'\0',sizeof(carrSendBuf));
-    memset(cpUploadType,'\0',sizeof(cpUploadType));
-    memset(&stFileStat,'\0',sizeof(stFileStat));
-    memset(&stIc,'\0',sizeof(stIc));
-    pSqlPool = MySqlConnPool::getSqlConnPoolInstance();
-    bLinger = false,bUpload = false;
-    nContent = 0;
-    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0;
+    boundary.resize(0);
+    filepath.resize(0);
+    umap_body.clear();
+    upsize= 0;
+
+    bLinger = bUpload = false;
+    nContent =  nBytesHadSend =  nLastPosInSend = nBytes2Send = 0;
+
     enCheckState = CHECK_STATE_REQUESTLINE;
     enMethod = GET;
+    
+    pSqlPool = MySqlConnPool::getSqlConnPoolInstance();
+
+    memset(carrSendBuf,'\0',sizeof(carrSendBuf));
+    memset(&stFileStat,'\0',sizeof(stFileStat));
+    memset(&stIc,'\0',sizeof(stIc));
+    
+    
     if(cpFileAddress != nullptr)
     {
         unmap();
@@ -96,9 +104,9 @@ bool MyHttpConn::read(){
     do{
         char newBuff[65536];
         struct iovec iov[2];
-        const size_t writeable_size = stBuffer.writeable_size();
+        const size_t writeable_size = st_rbuf.writeable_size();
 
-        iov[0].iov_base = stBuffer.raw_ptr() + stBuffer.size();
+        iov[0].iov_base = st_rbuf.raw_ptr() + st_rbuf.size();
         iov[0].iov_len = writeable_size;
         iov[1].iov_base = newBuff;
         iov[1].iov_len = sizeof(newBuff);
@@ -115,12 +123,12 @@ bool MyHttpConn::read(){
         }
         else{
             if(read_ret <= writeable_size){
-                stBuffer.add_size(read_ret);
+                st_rbuf.add_size(read_ret);
             }else {
                 size_t outlimit_size = read_ret - writeable_size;
                 
-                stBuffer.add_size(writeable_size);
-                stBuffer.append_data(newBuff,outlimit_size);
+                st_rbuf.add_size(writeable_size);
+                st_rbuf.append_data(newBuff,outlimit_size);
             }
         }
     }while(bEt);
@@ -157,16 +165,16 @@ HTTP_CODE MyHttpConn::parseRequestLine()
     char *purl = nullptr;
     if((purl = strstr(cpRequestLine,"//"))!=nullptr){
         if(strlen(++purl) == 1){
-            str_url = "login.html";
+           str_get_url = ("login.html");
         }else{
-            str_url = purl+1;
+           str_get_url = (purl+1);
         }
     }
     else if((purl = strstr(cpRequestLine,"/"))!=nullptr){
         if(strlen(purl) == 1){
-            str_url = "login.html";
+           str_get_url = ("login.html");
         }else{
-            str_url = purl+1;
+           str_get_url = (purl+1);
         }
     }
     else{
@@ -224,57 +232,143 @@ HTTP_CODE MyHttpConn::parseRequestHeader()
 }
 
 
-
 HTTP_CODE MyHttpConn::processUpload(){
-    if(str_body.size() < nContent){
-        return INCOMPLETE_REQUEST;
-    }
-    
-    std::string_view body = str_body;
-
     size_t st = 0, ed = 0;
-    ed = body.find("\r\n");
-    std::string_view boundary = body.substr(0, ed);
+    if(boundary.size() == 0){
+        // 第一次接收文件
+        ed = str_body.find("\r\n",0);
+        boundary = str_body.substr(0, ed);
 
-    // 取文件名
-    st = str_body.find("filename=\"", ed) + strlen("filename=\"");
-    ed = str_body.find("\"", st);
-    std::string filenpath = static_cast<std::string>(FULL_OTH_FILE_ROOT) + str_body.substr(st, ed - st);
-    printf("upload_path[%s]\n",filenpath.c_str());
+        // 取文件名
+        st = str_body.find("filename=\"", ed) + strlen("filename=\"");
+        ed = str_body.find("\"", st);
+        filepath = static_cast<std::string>(FULL_OTH_FILE_ROOT) + str_body.substr(st, ed - st);
 
-    // 取内容
-    st = body.find("\r\n\r\n", ed) + strlen("\r\n\r\n");
-    ed = body.find(boundary, st) - 2; // 文件结尾也有\r\n
-    std::string_view content =  body.substr(st, ed - st);
+        // 取内容
+        st = str_body.find("\r\n\r\n",ed) + strlen("\r\n\r\n");
+        //printf("boundary:%s\nfilepath:%s\n",boundary.data(),filepath.data());
+    }
+    size_t n_boundary_idx = str_body.find(boundary, st);
+    if(n_boundary_idx == std::string::npos){
+        // 后续还有文件内容需要读取
+        ed = str_body.size();
+    }   
+    else{
+        // 文件全部内容读取完毕
+        ed = n_boundary_idx - 2; // 文件结尾也有\r\n
+    }
+    std::string content = std::move(str_body.substr(st,ed - st));
     
     // 写内容
     std::ofstream ofs;
     // 如果文件分多次发送，应该采用app，同时为避免重复上传，应该用md5做校验
-    ofs.open(filenpath.data(), std::ios::ate | std::ios::binary);
+    ofs.open(filepath.data(), std::ios::app | std::ios::binary);
     ofs << content;
     ofs.close(); 
 
-    // size_t st = 0, ed = 0;
-    // ed = body.find("\r\n");
-    // std::string boundary = body.substr(0, ed);
-    // printf("boundary[%s]\n",boundary.data());
-    // // 解析文件信息
-    // st = body.find("filename=\"", ed) + strlen("filename=\"");
-    // ed = body.find("\"", st);
-    // std::string filenpath = FULL_OTH_FILE_ROOT + body.substr(st, ed - st);
-    // printf("filenpath[%s]\n",filenpath.data());
-    // // 解析文件内容，文件内容以\r\n\r\n开始
-    // st = body.find("\r\n\r\n", ed) + strlen("\r\n\r\n");
-    // ed = body.find(boundary, st) - 2; // 文件结尾也有\r\n
-    // std::string content =  body.substr(st, ed - st);
-    // printf("content[%s]\n",content.data());
-    // std::ofstream ofs;
-    // // 如果文件分多次发送，应该采用app，同时为避免重复上传，应该用md5做校验
-    // ofs.open(filenpath.data(), std::ios::ate);
-    // ofs << content;
-    // ofs.close(); 
+    return n_boundary_idx==-1?INCOMPLETE_REQUEST:FILE_REQUEST;
+}
 
-    return FILE_REQUEST;
+void MyHttpConn::parse_postBody(){
+    if(str_body.size() < nContent){
+        return ;
+    }
+    auto convertHex = [](char ch)->int{
+        if (ch >= 'A' && ch <= 'F') return ch - 'A' + 10;
+        if (ch >= 'a' && ch <= 'f') return ch - 'a' + 10;
+        return static_cast<int>(ch);
+    };
+    std::string key, value;
+    int num = 0;
+    int n = str_body.size();
+    bool need_value = false;
+    //key=value&key=value
+    //%:hex,+:' '
+    //i:right,j:left
+    int i = 0, j = 0;
+    for (; i < n; i ++)
+    {
+        char ch = str_body[i];
+        switch (ch)
+        {
+        case '=':
+            need_value = true;
+            key = str_body.substr(j, i - j);
+            j = i + 1;
+            break;
+        case '+':
+            str_body[i] = ' ';
+            break;
+        case '%':
+            num = convertHex(str_body[i + 1] * 16 + convertHex(str_body[i + 2]));
+            str_body[i + 2] = num % 10 + '0';
+            str_body[i + 1] = num / 10 + '0';
+            i += 2;
+            break;
+        case '&':
+            need_value = false;
+            value = str_body.substr(j, i - j);
+            j = i + 1;
+            umap_body[key] = value;
+        default:
+            break;
+        }
+    }
+    if(need_value){
+        umap_body[key] = str_body.substr(j,n-j);
+    }
+}
+
+HTTP_CODE MyHttpConn::vertify_user(const std::string& user,const std::string& pwd,bool binsert){
+    if(user.empty() || pwd.empty()){
+        return BAD_REQUEST;
+    }
+    MYSQL* sql_conn = nullptr;
+    sqlConnRAII(&sql_conn,pSqlPool);
+    if(sql_conn == nullptr){
+        LOG_ERROR("No sqlConnect can be used!");
+        return INTERNAL_ERRNO;
+    }
+
+    char sql_command[256];
+    snprintf(sql_command, 256, "SELECT name,passwd FROM accounts WHERE name='%s' LIMIT 1", user.c_str());
+    
+    if(mysql_query(sql_conn,sql_command) != 0){
+        LOG_ERROR("MySql Select Error![%s]",sql_command);
+        return INTERNAL_ERRNO;
+    }
+
+    MYSQL_RES* pResult = mysql_store_result(sql_conn);
+    int nMatchRows = mysql_num_rows(pResult);
+    
+    if(binsert && nMatchRows > 0){
+        /*已经被注册*/
+        str_response_url = "repeatRegister.html";
+    }
+    else if(binsert && nMatchRows == 0){
+        /*可以注册*/
+        snprintf(sql_command, 256, "INSERT INTO accounts(name,passwd)VALUES('%s','%s')", user.c_str(),pwd.c_str());
+        if( mysql_query(sql_conn,sql_command) ){
+            LOG_ERROR("Mysql insert error[%s]",sql_command);
+            return INTERNAL_ERRNO;
+        }
+        str_response_url = "registerSucceed.html";
+    }
+    else if(!binsert && nMatchRows == 0){
+        str_response_url =  "loginError.html";
+    }
+    else if(!binsert && nMatchRows > 0){
+        /*检查账号密码是否一致*/
+        MYSQL_ROW sql_data = mysql_fetch_row(pResult);
+        std::string stored_pwd = sql_data[1];
+        if(stored_pwd != pwd){
+            str_response_url =  "loginError.html";
+        }else{
+            str_response_url = "index.html";
+        }
+    }
+    return GET_REQUEST;
+
 }
 
 HTTP_CODE MyHttpConn::parseContent()
@@ -287,107 +381,41 @@ HTTP_CODE MyHttpConn::parseContent()
     /*Post*/
     if(enMethod == POST)
     {
+        /*解析请求体中各参数*/
+        parse_postBody();
+        HTTP_CODE cur_ret = GET_REQUEST;
         /*注册*/
-        MYSQL* pTmpSqlConn = nullptr;
-        sqlConnRAII(&pTmpSqlConn,pSqlPool);
-        if(pTmpSqlConn == nullptr)
-        {
-            LOG_ERROR("No sqlConnect can be used!");
-            return INTERNAL_ERRNO;
+        if(str_get_url.find("register") != -1){
+            cur_ret = vertify_user(umap_body["name"],umap_body["pwd"],true);
+        }else if(str_get_url.find("login") != -1){
+            cur_ret = vertify_user(umap_body["name"],umap_body["pwd"],false);
+        }else{
+            str_response_url = str_get_url;
         }
 
-        char* cpName =  strstr(cpTmpContent,"name=");
-        cpName += 5;
-        char* cpPwd = strstr(cpTmpContent,"&pwd=");
-        *cpPwd = '\0';
-        cpPwd += 5;
-        std::string strName = cpName;
-        std::string strPwd = cpPwd;
-
-        /*查询数据库*/
-        std::string strSqlSelect = "select passwd from accounts where name = '" + strName + "'" ;
-        int nRet = mysql_query(pTmpSqlConn,strSqlSelect.c_str());
-        if(nRet != 0)
-        {
-            LOG_ERROR("MySql Select Error![%s]",strSqlSelect.c_str());
-            return INTERNAL_ERRNO;
-        }
-        MYSQL_RES* pResult = mysql_store_result(pTmpSqlConn);
-        if(pResult != nullptr)
-        {
-            int nMatchRows = mysql_num_rows(pResult);
-
-            if(strstr(str_url.data(),"register"))
-            {
-                /*注册页面*/
-                if(nMatchRows != 0)
-                {
-                    /*原用户已经注册*/
-                    str_url = "repeatRegister.html";
-                }
-                else
-                {
-                    std::string strSqlInsert = "insert into accounts(name,passwd)values('" + strName +"','" + strPwd +"')";
-                    nRet = mysql_query(pTmpSqlConn,strSqlInsert.c_str());
-                    if(nRet != 0)
-                    {
-                        LOG_ERROR("MySql Insert Error![%s]",strSqlInsert.c_str());
-                        return INTERNAL_ERRNO;
-                    }
-                    str_url = "registerSucceed.html";
-                }
-            }
-            else if(strstr(str_url.data(),"login"))
-            {
-                /*登录界面*/
-                if(nMatchRows == 0)
-                {
-                    /*还未注册*/
-                    str_url = "register.html";
-                }
-                else 
-                {
-                    MYSQL_ROW nMysqlRow = mysql_fetch_row(pResult);
-                    std::string strStoredPwd = nMysqlRow[0];
-                    if(strStoredPwd == strPwd)
-                    {
-                        /*密码正常-->登录成功*/
-                        str_url = "index.html";
-                    }
-                    else 
-                    {
-                        /*密码错误-->提示失败*/
-                        str_url = "loginError.html";
-                    }
-                }
-            }
-            else
-            {
-                /*暂不支持访问其余页面*/
-                return NO_RESOURCE;
-            }
+        if(cur_ret == INTERNAL_ERRNO ||cur_ret == BAD_REQUEST){
+            return cur_ret;
         }
     }
     else if(enMethod == GET)
     {
         /*GET请求 不对content处理*/
         /*默认发送登录页面*/
-        if(str_url.empty() ) str_url = "login.html";
-        if(strstr(str_url.data(),"pressure")) return FILE_REQUEST;
+        str_response_url = str_get_url;
+        if(strstr(str_get_url.data(),"pressure")) return FILE_REQUEST;
     }
 
-    if(str_url.empty()
-        )
+    if(str_response_url.empty())
     {
-        str_url = "login.html";
+        str_response_url = "login.html";
     }
 
     std::string strFullAddress = FULL_HTML_ROOT;
-    if(strstr(str_url.data(),"html") == nullptr)
+    if(strstr(str_response_url.data(),"html") == nullptr)
     {
         strFullAddress = FULL_OTH_FILE_ROOT;
     }
-    strFullAddress +=  str_url;
+    strFullAddress +=  str_response_url;
     char* cpFullAddress = const_cast<char*>(strFullAddress.c_str());
 
     if(stat(cpFullAddress,&stFileStat) < 0)
@@ -415,20 +443,27 @@ HTTP_CODE MyHttpConn::parseContent()
 HTTP_CODE MyHttpConn::processRead(){
     LINE_STATUS enCurLineStatus = LINE_COMPLETE;
     HTTP_CODE enCurHttpCode = NO_REQUEST;
-    while(!stBuffer.empty())
+    while(!st_rbuf.empty())
     {
-        if(enCheckState == CHECK_STATE_UPLOAD ||
-            enCheckState == CHECK_STATE_CONTENT){
-            /*主状态机：body*/
-            stBuffer.read_all(str_body);
+        if(enCheckState == CHECK_STATE_CONTENT){
+            /*主状态机：content*/
+            st_rbuf.read_all(str_body);
             if(str_body.size() < nContent){
+                return INCOMPLETE_REQUEST;
+            }
+        }else if(enCheckState == CHECK_STATE_UPLOAD){
+            st_rbuf.read_all(str_body);
+            /*主状态机:upload*/
+            if(str_body.size() >= std::min({(int64_t)MAX_LIMIT, nContent, nContent-upsize})){
+
+            }else{
                 return INCOMPLETE_REQUEST;
             }
         }
         else{
             str_line.resize(0);
             /*其余状态 逐行解析*/
-            if(!stBuffer.find_str(str_line,"\r\n")){
+            if(!st_rbuf.find_str(str_line,"\r\n")){
                 return INCOMPLETE_REQUEST;
             }
         }
@@ -463,7 +498,10 @@ HTTP_CODE MyHttpConn::processRead(){
             /*上传请求*/
             case CHECK_STATE_UPLOAD:
             {
-                return processUpload();
+                upsize += str_body.size();
+                enCurHttpCode = processUpload();
+                str_body.resize(0)
+                return enCurHttpCode;
             }
             default:
             {
@@ -498,7 +536,7 @@ bool MyHttpConn::addStatusLine(int nStatus,const char* cpTitle)
 bool MyHttpConn::addResponseHeader(int nWait2SendSize)
 {
     std::string str = "text/html";
-    if(!str_url.empty() && strstr(str_url.data(),".pdf")){
+    if(!str_response_url.empty() && strstr(str_response_url.data(),".pdf")){
         str="application/pdf";
     }
     return addContentLength(nWait2SendSize) && addContentType(str.c_str()) &&addLinger() && addBlankLine();
@@ -654,7 +692,7 @@ void MyHttpConn::write(int nfd,bool& bflag)
         return ;
     }
 
-    LOG_INFO("DeBug:write to [%d],nBytes2Send[%d],url[%s]",nSockfd,nBytes2Send,str_url.data());
+    LOG_INFO("DeBug:write to [%d],nBytes2Send[%d]",nSockfd,nBytes2Send);
 
     int nRet = 0;
     for( ; ; )
@@ -674,7 +712,6 @@ void MyHttpConn::write(int nfd,bool& bflag)
             bflag = false;
             return ;
         }
-        nTotal += nRet;
 
         nBytesHadSend += nRet;
         nBytes2Send -= nRet;
@@ -693,7 +730,7 @@ void MyHttpConn::write(int nfd,bool& bflag)
 
         if(nBytes2Send <= 0)
         {
-            LOG_DEBUG("Send 2 [%d] done,total[%d],keep-alive:%d",nfd,nTotal,bLinger);
+            LOG_DEBUG("Send 2 [%d] done,keep-alive:%d",nfd,bLinger);
             unmap();
             htModfd(nfd,hc_snEpollFd,EPOLLIN,true);
             if(bLinger)

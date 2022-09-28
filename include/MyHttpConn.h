@@ -16,6 +16,7 @@
 #include <sys/sendfile.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <map>
 #include <fcntl.h> 
 #include <string_view>
 #include "MyLog.h"
@@ -29,6 +30,7 @@
 #define FILENAME_SIZE 100
 #define FILE_MODE (S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH) 
 
+#define MAX_LIMIT 2048 * 1024
 
 /*HTTP请求方法*/
 enum METHOD
@@ -121,6 +123,9 @@ private:
     HTTP_CODE parseContent();
     /*接收上传文件*/
     HTTP_CODE processUpload();
+    /*验证pwd & user*/
+    HTTP_CODE vertify_user(const std::string& user,const std::string& pwd, bool binsert);
+    void parse_postBody();
 
     /*-------发送----------*/
     /*处理写*/
@@ -143,10 +148,11 @@ private:
     bool addInFormat(const char *format,...);
     
 
-
     /*关闭连接*/
     bool closeConn();
     void unmap();
+
+    void check_image();
 
 public:
     static int hc_snEpollFd;
@@ -164,7 +170,7 @@ private:
     bool bEt;                                               //是否ET读
 
     bool bLinger;                                           //是否keep-live
-    int nContent;                                           //请求主体长度					                        //指向解析最新数据的最后一个行尾
+    int64_t nContent;                                           //请求主体长度					                        //指向解析最新数据的最后一个行尾
     CHECK_STATE enCheckState;		                        //主状态机状态	
 	
     METHOD enMethod;					                    //请求方法
@@ -172,19 +178,24 @@ private:
     int nLastPosInSend;                                     //指向发送缓冲区最后的位置
     int nBytes2Send;                                        //待发送的字节数
     int nBytesHadSend;                                      //已发送的字节数
-    int nTotal;                                             //每次请求发送的总字节
 
-    char  cpUploadType[FILENAME_SIZE];                      //上传文件类型
     bool  bUpload;                                          //此次请求是否是上传请求
     
-    char* cpFileAddress;
+    char* cpFileAddress;                                    //mmap文件的地址
 
-    Buffer stBuffer;
+    Buffer st_rbuf;
     std::string str_body;
     std::string str_line;
-    std::string str_url;
+
+    std::map<std::string,std::string> umap_body;       //请求体中各参数
+    std::string str_response_url;                                //回送url
     std::string str_version;
     std::string str_host;
+    std::string str_get_url;
+
+    std::string boundary;
+    std::string filepath;
+    int64_t upsize;
 };
 
 
