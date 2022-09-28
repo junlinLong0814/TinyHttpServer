@@ -8,7 +8,6 @@ void Buffer::append_data(char* data,size_t size){
     }else{
         /*剩余空间不够写 扩容*/
         size_t new_capacity_limit = (size - writeable_size() + _capacity) * 2;
-        printf("ori_cap:%lu,to_write:%lu,new_cap:%lu\n",_capacity,size,new_capacity_limit);
         std::unique_ptr<char[]> new_ptr(new char[new_capacity_limit]);
         memcpy(new_ptr.get(),_buffer.get(),_size);
         _buffer.reset();

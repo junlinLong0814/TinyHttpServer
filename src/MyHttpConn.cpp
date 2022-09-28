@@ -1,7 +1,7 @@
 #include "MyHttpConn.h"
 
-#define FULL_HTML_ROOT "/home/ljl/mpServer/htmlfolder"
-#define FULL_OTH_FILE_ROOT "/home/ljl/mpServer/sourcefolder"
+#define FULL_HTML_ROOT "/home/ljl/mpServer/htmlfolder/"
+#define FULL_OTH_FILE_ROOT "/home/ljl/mpServer/sourcefolder/"
 
 
 int MyHttpConn::hc_snEpollFd = 0;
@@ -69,18 +69,14 @@ void MyHttpConn::httpConnInit()
     stBuffer = (std::move(Buffer((size_t)0,RECVBUF_SIZE)));
     str_body.resize(0);
     str_line.resize(0);
-    memset(carrRecvBuf,'\0',sizeof(carrRecvBuf));
     memset(carrSendBuf,'\0',sizeof(carrSendBuf));
-    memset(carrUploadFileContent,'\0',sizeof(carrUploadFileContent));
-    memset(carrFilePath,'\0',sizeof(carrFilePath));
-    memset(cpBoundary,'\0',sizeof(cpBoundary));
     memset(cpUploadType,'\0',sizeof(cpUploadType));
     memset(&stFileStat,'\0',sizeof(stFileStat));
     memset(&stIc,'\0',sizeof(stIc));
     pSqlPool = MySqlConnPool::getSqlConnPoolInstance();
     bLinger = false,bUpload = false;
-    nRowStart = 0 ,nRowEnd = 0 , nLastPosInRecv = 0 , nContent = 0, nLastInReadBuf = 0;
-    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0,nUploadFd = 0,nBoundaryidx = 0;
+    nContent = 0;
+    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0;
     enCheckState = CHECK_STATE_REQUESTLINE;
     enMethod = GET;
     if(cpFileAddress != nullptr)
@@ -90,22 +86,6 @@ void MyHttpConn::httpConnInit()
     cpFileAddress = nullptr;
 }
 
-/*用于处理上传大文件的连续请求*/
-void MyHttpConn::initForUpload()
-{
-    memset(carrRecvBuf,'\0',sizeof(carrRecvBuf));
-    memset(carrSendBuf,'\0',sizeof(carrSendBuf));  
-    memset(&stFileStat,'\0',sizeof(stFileStat));
-    memset(&stIc,'\0',sizeof(stIc));
-    nRowStart = 0 ,nRowEnd = 0 , nLastPosInRecv = 0 , nContent = 0, nLastInReadBuf = 0;
-    nBytesHadSend = 0, nLastPosInSend = 0, nBytes2Send = 0, nTotal = 0;
-    enCheckState = CHECK_STATE_UPLOAD;
-    enMethod = POST;
-    if(cpFileAddress != nullptr)
-    {
-        unmap();
-    }
-}
 
 bool MyHttpConn::read(){
     if(nSockfd < 0){
@@ -149,31 +129,6 @@ bool MyHttpConn::read(){
 }
 
 
-LINE_STATUS MyHttpConn::parseLine()
-{
-    if(nSockfd < 0 ) return LINE_BAD;
-    char* cpNextRowStart = carrRecvBuf + nRowEnd;
-    char* cpNextRowEnd = strstr(cpNextRowStart,"\r\n");
-    if(cpNextRowEnd == nullptr)
-    {
-        int nWait2Parse = strlen(cpNextRowStart);
-        memcpy(carrRecvBuf,cpNextRowStart,nWait2Parse);
-        nLastPosInRecv = nWait2Parse;
-        /*将当前缓冲区的字符前挪*/
-        return LINE_CONTINUE;
-    }
-    *cpNextRowEnd = '\0';
-    ++cpNextRowEnd;
-    *cpNextRowEnd = '\0';
-    ++cpNextRowEnd;
-
-    nRowStart = nRowEnd;
-    nRowEnd = cpNextRowEnd - carrRecvBuf;
-    nLastInReadBuf -= (nRowEnd - nRowStart);
-
-    return LINE_COMPLETE;
-}
-
 /*解析请求行*/
 HTTP_CODE MyHttpConn::parseRequestLine()
 {
@@ -202,16 +157,16 @@ HTTP_CODE MyHttpConn::parseRequestLine()
     char *purl = nullptr;
     if((purl = strstr(cpRequestLine,"//"))!=nullptr){
         if(strlen(++purl) == 1){
-            str_url = "/login.html";
+            str_url = "login.html";
         }else{
-            str_url = purl;
+            str_url = purl+1;
         }
     }
     else if((purl = strstr(cpRequestLine,"/"))!=nullptr){
         if(strlen(purl) == 1){
-            str_url = "/login.html";
+            str_url = "login.html";
         }else{
-            str_url = purl;
+            str_url = purl+1;
         }
     }
     else{
@@ -268,149 +223,58 @@ HTTP_CODE MyHttpConn::parseRequestHeader()
     return INCOMPLETE_REQUEST;
 }
 
-bool MyHttpConn::judge_boundary()
-{
-    //抓取边界符
-    char *pBufStart = carrRecvBuf + nRowStart;
-    if(strlen(pBufStart) == 0) 
-    {
-        /*该http报文并不是正文报文*/
-        return false;
-    }
-    else
-    {
-        strcpy(cpBoundary,pBufStart);
-        return true;
-    }    
-}
 
-bool MyHttpConn::judge_filename()
-{
-    //抓取文件名字
-    char *bufStart = carrRecvBuf + nRowStart;
-    bufStart = strstr(bufStart,"ename=\"");
-    if(bufStart != nullptr)
-    {
-        char *cpUploadFileName = bufStart + 7;
-        snprintf(carrFilePath,sizeof(carrFilePath),"%s/%s",FULL_OTH_FILE_ROOT,cpUploadFileName);
-        carrFilePath[strlen(carrFilePath)-1]='\0';
-        nUploadFd = open(carrFilePath,O_CREAT|O_TRUNC|O_APPEND|O_RDWR,FILE_MODE);
-        if((nUploadFd <= 0))
-        {
-            printf("not open!\n");
-            LOG_ERROR("Create upload file error! [%d]",errno);
-            return false;
-        }
-    }
-    return true;
-}
 
-bool MyHttpConn::judge_uploadType()
-{
-    char *bufStart = carrRecvBuf + nRowStart;
-    char *cpTypeStart = strstr(bufStart,"Type:");
-    if(cpTypeStart == nullptr)
-    {
-        cpTypeStart = strstr(bufStart,"type:");
-    }
-    if(cpTypeStart != nullptr)
-    {
-        cpTypeStart += 5;
-        strcpy(cpUploadType,cpTypeStart);
-
-        /*设置相关偏移开始处理文件内容*/
-        parseLine();
-        nRowStart = nRowEnd;
-
-    }
-    return true;
-}
-
-HTTP_CODE MyHttpConn::write_fileContent(bool& bGotFileEof)
-{
-    char *pContentStart = carrRecvBuf + nRowStart;
-    int nWriteLen = strlen(pContentStart);
-    
-    if(nWriteLen > 0)
-    {   
-        char *pContentEnd = strstr(pContentStart,cpBoundary);
-        bGotFileEof = (pContentEnd != nullptr);
-        if(nUploadFd > 0)
-        {
-            if(bGotFileEof)
-            {
-                nWriteLen = pContentEnd - pContentStart;
-            }
-            int nWriteRet = ::write(nUploadFd,pContentStart,nWriteLen);
-            if(nWriteLen == -1)
-            {
-                if(errno == EAGAIN)
-                {
-                    bGotFileEof = false;
-                    return INCOMPLETE_REQUEST;
-                } 
-                bGotFileEof = true;
-                return INTERNAL_ERRNO;
-            }
-            else if(nWriteLen == 0)
-            {
-                bGotFileEof = true;
-                return INTERNAL_ERRNO;
-            }
-            
-        }
-    }
-    if(bGotFileEof) {
-        if(nUploadFd > 0){
-            close(nUploadFd);
-            nUploadFd = 0;
-        }
-        return FILE_REQUEST;
-    }
-    return INCOMPLETE_REQUEST;
-}
-
-HTTP_CODE MyHttpConn::processUpload()
-{
-    HTTP_CODE enRet = FILE_REQUEST;
-    bool bGotFileEof = false;
-    bool bBoundary=strlen(cpBoundary), bFileName=strlen(carrFilePath), bType=strlen(cpUploadType);
-    while(nLastInReadBuf > 0 &&
-            (!bBoundary || !bFileName || !bType)
-         )
-    {
-        /*当前缓冲区仍有未读字符*/
-        parseLine();
-        if(!bBoundary) judge_boundary();
-        else if(!bFileName) 
-        {
-            if(!judge_filename())
-            {
-                return BAD_REQUEST;
-            }
-        } 
-        else if(!bType) judge_uploadType(); 
-
-        bBoundary = strlen(cpBoundary) > 0;
-        bFileName = strlen(carrFilePath) > 0; 
-        bType = strlen(cpUploadType) > 0;
-        //LOG_DEBUG("cpBoundary:%s\ncarrFilePath:%s\ncpUploadType:%s\n",cpBoundary,carrFilePath,cpUploadType);
-    }
-    if(nLastInReadBuf > 0 && bBoundary && bFileName && bType)
-    {
-        enRet = write_fileContent(bGotFileEof);
-    }
-
-    if(!bGotFileEof)
-    {
-        /*当前缓冲区已经读完 但仍未取得完整的文件 等待内核将另外的数据传达*/
-        int nCurFd = nSockfd;
-        initForUpload();
-        nSockfd = nCurFd;
+HTTP_CODE MyHttpConn::processUpload(){
+    if(str_body.size() < nContent){
         return INCOMPLETE_REQUEST;
     }
+    
+    std::string_view body = str_body;
 
-    return enRet;
+    size_t st = 0, ed = 0;
+    ed = body.find("\r\n");
+    std::string_view boundary = body.substr(0, ed);
+
+    // 取文件名
+    st = str_body.find("filename=\"", ed) + strlen("filename=\"");
+    ed = str_body.find("\"", st);
+    std::string filenpath = static_cast<std::string>(FULL_OTH_FILE_ROOT) + str_body.substr(st, ed - st);
+    printf("upload_path[%s]\n",filenpath.c_str());
+
+    // 取内容
+    st = body.find("\r\n\r\n", ed) + strlen("\r\n\r\n");
+    ed = body.find(boundary, st) - 2; // 文件结尾也有\r\n
+    std::string_view content =  body.substr(st, ed - st);
+    
+    // 写内容
+    std::ofstream ofs;
+    // 如果文件分多次发送，应该采用app，同时为避免重复上传，应该用md5做校验
+    ofs.open(filenpath.data(), std::ios::ate | std::ios::binary);
+    ofs << content;
+    ofs.close(); 
+
+    // size_t st = 0, ed = 0;
+    // ed = body.find("\r\n");
+    // std::string boundary = body.substr(0, ed);
+    // printf("boundary[%s]\n",boundary.data());
+    // // 解析文件信息
+    // st = body.find("filename=\"", ed) + strlen("filename=\"");
+    // ed = body.find("\"", st);
+    // std::string filenpath = FULL_OTH_FILE_ROOT + body.substr(st, ed - st);
+    // printf("filenpath[%s]\n",filenpath.data());
+    // // 解析文件内容，文件内容以\r\n\r\n开始
+    // st = body.find("\r\n\r\n", ed) + strlen("\r\n\r\n");
+    // ed = body.find(boundary, st) - 2; // 文件结尾也有\r\n
+    // std::string content =  body.substr(st, ed - st);
+    // printf("content[%s]\n",content.data());
+    // std::ofstream ofs;
+    // // 如果文件分多次发送，应该采用app，同时为避免重复上传，应该用md5做校验
+    // ofs.open(filenpath.data(), std::ios::ate);
+    // ofs << content;
+    // ofs.close(); 
+
+    return FILE_REQUEST;
 }
 
 HTTP_CODE MyHttpConn::parseContent()
@@ -418,7 +282,6 @@ HTTP_CODE MyHttpConn::parseContent()
     char* cpTmpContent = nullptr;
     if(!str_body.empty()){
         cpTmpContent = const_cast<char*>(str_body.data());
-        printf("body:%s\n",str_body.c_str());
     }
     
     /*Post*/
@@ -460,7 +323,7 @@ HTTP_CODE MyHttpConn::parseContent()
                 if(nMatchRows != 0)
                 {
                     /*原用户已经注册*/
-                    str_url = "/repeatRegister.html";
+                    str_url = "repeatRegister.html";
                 }
                 else
                 {
@@ -471,7 +334,7 @@ HTTP_CODE MyHttpConn::parseContent()
                         LOG_ERROR("MySql Insert Error![%s]",strSqlInsert.c_str());
                         return INTERNAL_ERRNO;
                     }
-                    str_url = "/registerSucceed.html";
+                    str_url = "registerSucceed.html";
                 }
             }
             else if(strstr(str_url.data(),"login"))
@@ -480,7 +343,7 @@ HTTP_CODE MyHttpConn::parseContent()
                 if(nMatchRows == 0)
                 {
                     /*还未注册*/
-                    str_url = "/register.html";
+                    str_url = "register.html";
                 }
                 else 
                 {
@@ -489,12 +352,12 @@ HTTP_CODE MyHttpConn::parseContent()
                     if(strStoredPwd == strPwd)
                     {
                         /*密码正常-->登录成功*/
-                        str_url = "/index.html";
+                        str_url = "index.html";
                     }
                     else 
                     {
                         /*密码错误-->提示失败*/
-                        str_url = "/loginError.html";
+                        str_url = "loginError.html";
                     }
                 }
             }
@@ -509,14 +372,14 @@ HTTP_CODE MyHttpConn::parseContent()
     {
         /*GET请求 不对content处理*/
         /*默认发送登录页面*/
-        if(str_url.empty() ) str_url = "/login.html";
+        if(str_url.empty() ) str_url = "login.html";
         if(strstr(str_url.data(),"pressure")) return FILE_REQUEST;
     }
 
     if(str_url.empty()
         )
     {
-        str_url = "/login.html";
+        str_url = "login.html";
     }
 
     std::string strFullAddress = FULL_HTML_ROOT;
@@ -553,7 +416,7 @@ HTTP_CODE MyHttpConn::processRead(){
     LINE_STATUS enCurLineStatus = LINE_COMPLETE;
     HTTP_CODE enCurHttpCode = NO_REQUEST;
     while(!stBuffer.empty())
-        {
+    {
         if(enCheckState == CHECK_STATE_UPLOAD ||
             enCheckState == CHECK_STATE_CONTENT){
             /*主状态机：body*/
@@ -564,12 +427,10 @@ HTTP_CODE MyHttpConn::processRead(){
         }
         else{
             str_line.resize(0);
-            //printf("cur_size:%d,",stBuffer.size());
             /*其余状态 逐行解析*/
             if(!stBuffer.find_str(str_line,"\r\n")){
                 return INCOMPLETE_REQUEST;
             }
-            //printf("str_line:%s\n",str_line.c_str());
         }
         switch(enCheckState)
         {
@@ -860,7 +721,6 @@ void MyHttpConn::process(int fd)
     if(bReadSucceed)
     {
         HTTP_CODE enRet = processRead();
-        printf("%d processread\n",enRet);
         if(enRet == NO_REQUEST || enRet == INCOMPLETE_REQUEST)
         {
             htModfd(fd,hc_snEpollFd,EPOLLIN,true); 
@@ -871,20 +731,11 @@ void MyHttpConn::process(int fd)
         {
             closeConn();
             return ;
-        }
-        if(bPrepared2Write &&
-                enCheckState == CHECK_STATE_UPLOAD &&
-                enRet == INCOMPLETE_REQUEST)
-        {
-            /*这段报文未抓到完整的上传文件 继续监听*/
-            htModfd(fd,hc_snEpollFd,EPOLLIN,true);
-        }
-        else if(bPrepared2Write)
+        }else
         {
             /*正常请求 || 已捉到完整的文件*/
             htModfd(fd,hc_snEpollFd,EPOLLOUT,true);
-        }
-          
+        } 
     }
     else
     {
